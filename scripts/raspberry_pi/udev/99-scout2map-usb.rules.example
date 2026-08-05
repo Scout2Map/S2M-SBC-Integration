@@ -1,0 +1,5 @@
+# Replace the placeholder values with each device's actual attributes.
+# Keep separate serial values so reconnecting devices cannot swap roles.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="PICO_VID", ATTRS{idProduct}=="PICO_PID", ATTRS{serial}=="PICO_SERIAL", SYMLINK+="scout2map_pico", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="DRIVE_VID", ATTRS{idProduct}=="DRIVE_PID", ATTRS{serial}=="DRIVE_SERIAL", SYMLINK+="scout2map_drive", GROUP="dialout", MODE="0660"

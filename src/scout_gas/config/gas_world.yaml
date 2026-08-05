@@ -1,0 +1,22 @@
+# scout_gas: 시뮬 가스 월드 + 장착 센서 정의 (gas_sensor_node 가 파싱).
+# 좌표는 SLAM /map 프레임(미터). 농도 모델: 점누출 가우시안 플룸
+#   field_g(x,y) = sum( peak_ppm * exp(-d^2 / (2*sigma^2)) )   (가스 종류 g 별로)
+
+thresholds:
+  warning_ppm: 200      # 센서 reading 이 넘으면 hex 노랑 + 'warning' 이벤트
+  danger_ppm: 600       # 넘으면 hex 빨강 + 'danger' 이벤트
+
+# 로봇에 장착된 "단일" 가스 센서 (예: MQ-4 = CH4 선택성 센서).
+#  - target_gas: 이 가스에만 정상 반응(계수 1.0)
+#  - cross_sensitivity: 타 가스 교차감응 계수 (0.0 = 완전히 반응 안 함)
+# => CH4 구역에선 높게 읽고, CO/CO2 구역에선 0 을 읽어 "특정 가스에만 반응"을 증명.
+sensor:
+  target_gas: CH4
+  cross_sensitivity: {CO: 0.0, CO2: 0.0}
+
+# 월드에 서로 다른 가스를 '구역'으로 배치 (모두 Nav2 로 접근 가능한 자유공간).
+# CH4 센서가 CH4 구역에만 반응함을 보여주기 위해 3종을 떨어뜨려 둔다.
+gas_sources:
+  - {name: zone_CH4, x:  1.0, y:  0.0, gas: CH4, peak_ppm: 1000, sigma: 0.4}   # 타깃
+  - {name: zone_CO,  x:  0.0, y:  1.0, gas: CO,  peak_ppm: 1000, sigma: 0.4}   # 비타깃
+  - {name: zone_CO2, x:  0.6, y: -0.6, gas: CO2, peak_ppm: 1000, sigma: 0.4}   # 비타깃

@@ -1,0 +1,2 @@
+# CPU inference runtime. Install only inside the vision virtual environment.
+onnxruntime

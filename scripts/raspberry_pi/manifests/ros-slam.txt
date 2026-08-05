@@ -1,0 +1,16 @@
+# Scout2Map onboard SLAM, Nav2, localization and diagnostics
+ros-jazzy-ros-base
+ros-jazzy-navigation2
+ros-jazzy-nav2-bringup
+ros-jazzy-slam-toolbox
+ros-jazzy-robot-localization
+ros-jazzy-imu-tools
+ros-jazzy-diagnostic-updater
+ros-jazzy-tf2-tools
+ros-jazzy-robot-state-publisher
+ros-jazzy-joint-state-publisher
+ros-jazzy-xacro
+ros-jazzy-laser-filters
+ros-jazzy-rosbag2
+ros-jazzy-rosbag2-storage-mcap
+ros-jazzy-teleop-twist-keyboard

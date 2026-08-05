@@ -1,0 +1,5 @@
+# Optional Gazebo Harmonic and RViz verification stack
+ros-jazzy-desktop
+ros-jazzy-rviz2
+ros-jazzy-ros-gz-sim
+ros-jazzy-ros-gz-bridge
