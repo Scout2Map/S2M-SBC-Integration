@@ -1,0 +1,9 @@
+repositories:
+  s2m_hardware:
+    type: git
+    url: https://github.com/Scout2Map/S2M-Hardware.git
+    version: 720ea6bc12691a10b5a7ac3b36fdaa968455213e
+  s2m_mcu_bridge_node:
+    type: git
+    url: https://github.com/Scout2Map/S2M-MCU_Bridge_Node.git
+    version: f373787c5f249f84c00a86837bf5677665bbc45d

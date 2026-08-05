@@ -1,0 +1,11 @@
+# ROS camera and AI inference interfaces
+ros-jazzy-vision-msgs
+ros-jazzy-image-transport
+ros-jazzy-compressed-image-transport
+ros-jazzy-camera-info-manager
+ros-jazzy-camera-calibration
+ros-jazzy-image-pipeline
+ros-jazzy-cv-bridge
+ros-jazzy-v4l2-camera
+python3-opencv
+python3-venv
