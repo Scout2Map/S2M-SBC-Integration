@@ -8,6 +8,7 @@ Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을 실행하기
 - Ubuntu 24.04와 ROS 2 Jazzy 설치 및 호환성 점검
 - 실차 `base_link`·LiDAR·IMU 프레임을 사용하는 Gazebo bringup
 - SLAM Toolbox와 Nav2의 저사양 시뮬레이션 설정
+- 관제망 단절 시 Nav2 출발점 복귀와 주행 링크·TF 장애 안전 정지 시뮬레이션
 - 선택성 가스 센서, 육각형 위험 지도, 이벤트 JSON과 occupancy map 저장
 - Pico 센서 USB CDC 장치와 ROS 토픽 상태 점검
 - RPLIDAR C1 드라이버 및 선택형 OpenCV/ONNX Runtime 설치
@@ -22,7 +23,11 @@ S2M-SBC-Integration/
 ├── docs/integration/
 │   ├── implementation-status.md   # 구현·검증 상태
 │   ├── map-marker-coordinate-design.md
+│   ├── repository-baseline-2026-08-13.md
+│   ├── real-hardware-validation.md
 │   ├── return-home-simulation-plan.md
+│   ├── sbc-runbook.md
+│   ├── simulation-validation-guide.md
 │   ├── slam-nav2-ugv-validation.md
 │   └── ugv-validation-checklist.md
 ├── scripts/raspberry_pi/
@@ -86,7 +91,9 @@ source ~/scout2map_env.sh
 ```
 
 다른 위치를 사용하려면 `--workspace /path/to/workspace`를 지정합니다. 패키지만
-설치하고 빌드를 생략하려면 `--no-build`를 사용합니다.
+설치하고 빌드를 생략하려면 `--no-build`를 사용합니다. `--no-build`는 이미
+workspace와 overlay가 준비된 개발 환경에서만 사용하며, 신규 설치의 첫 실행에는
+사용하지 않습니다.
 
 ### 수동 개발 빌드
 
@@ -101,8 +108,9 @@ vcs import ~/scout2map_ws/src < dependencies.repos
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths ~/scout2map_ws/src --ignore-src -r -y \
   --rosdistro jazzy
-colcon build --base-paths ~/scout2map_ws/src --symlink-install
-source ~/scout2map_ws/install/setup.bash
+cd ~/scout2map_ws
+colcon build --symlink-install
+source install/setup.bash
 ```
 
 현재 통합 launch는 Gazebo 시뮬레이션용입니다. 실차에서는 LiDAR, Pico bridge,
@@ -130,9 +138,55 @@ ros2 launch s2m_bringup s2m_slam_sim.launch.py \
   x_pose:=1.0 y_pose:=0.5 use_rviz:=false
 ```
 
-현재 world launch는 Gazebo GUI를 시작하므로 완전한 headless 실행 옵션은 제공하지
-않습니다. 시뮬레이션 시작 지연은 프로세스 준비 시간을 보장하는 readiness check가
-아니므로 느린 장비에서는 spawn 또는 Nav2 시작 시각을 추가 조정해야 할 수 있습니다.
+WSL, SSH 또는 CI처럼 GUI가 없는 환경에서는 서버 모드로 실행합니다.
+
+```bash
+ros2 launch s2m_bringup s2m_slam_sim.launch.py \
+  headless:=true use_rviz:=false
+```
+
+시뮬레이션 시작 지연은 프로세스 준비 시간을 보장하는 readiness check가 아니므로
+느린 장비에서는 spawn 또는 Nav2 시작 시각을 추가 조정해야 할 수 있습니다.
+
+## 자동 복귀 시뮬레이션
+
+`s2m_return_home_sim.launch.py`는 SLAM/Nav2, fault injector와 단일 `cmd_vel`
+안전 게이트를 함께 시작합니다.
+
+```bash
+ros2 launch s2m_bringup s2m_return_home_sim.launch.py
+```
+
+headless 실행은 다음과 같습니다.
+
+```bash
+ros2 launch s2m_bringup s2m_return_home_sim.launch.py \
+  headless:=true use_rviz:=false
+```
+
+관제 heartbeat 단절을 주입합니다.
+
+```bash
+ros2 service call /sim_faults/set_network std_srvs/srv/SetBool "{data: false}"
+```
+
+정상 조건에서는 저장한 시작 좌표로 Nav2 복귀를 수행합니다. 주행 링크 단절은
+자동 복귀 대상이 아니며 안전 정지로 전이합니다.
+
+```bash
+ros2 service call /sim_faults/set_drive_link std_srvs/srv/SetBool "{data: false}"
+ros2 topic echo /return_home/status
+```
+
+2026-08-13 WSL/Jazzy/Gazebo 환경에서 관제 heartbeat 단절 후 `ARRIVED`까지 복귀하고,
+주행 링크 단절 시 `SAFE_STOP`으로 전이하는 것을 확인했습니다. 이는 시뮬레이션 결과이며
+실차 모터 차단과 STM32 watchdog 검증을 대체하지 않습니다.
+
+상세 상태 전이, 초기화, TF fault, rosbag 기록 절차는
+[시뮬레이션 검증 가이드](docs/integration/simulation-validation-guide.md)를
+따릅니다. 현재 launch는 Gazebo 검증용이며 실제 UGV에 연결하기 전에
+[실기기 통합 시험](docs/integration/real-hardware-validation.md)의 활성화 조건을
+모두 충족해야 합니다.
 
 ## 가스 위험 지도 실행
 

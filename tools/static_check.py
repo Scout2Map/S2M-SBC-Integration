@@ -36,7 +36,7 @@ def main():
         except (SyntaxError, UnicodeError) as exc:
             errors.append(f'{path.relative_to(ROOT)}: Python parse: {exc}')
 
-    for path in repository_files('package.xml'):
+    for path in repository_files('package.xml') + repository_files('*.sdf'):
         try:
             ET.parse(path)
         except ET.ParseError as exc:
