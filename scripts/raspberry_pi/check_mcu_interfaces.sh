@@ -8,6 +8,9 @@ MOTOR_DEVICE="${SCOUT2MAP_MOTOR_MCU_DEVICE:-/dev/scout2map_drive}"
 ODOM_TOPIC="${SCOUT2MAP_ODOM_TOPIC:-/odom}"
 IMU_TOPIC="${SCOUT2MAP_IMU_TOPIC:-/imu/data}"
 BASE_FRAME="${SCOUT2MAP_BASE_FRAME:-base_link}"
+# Seconds the CLI waits for graph discovery before reporting. Raise it on a
+# loaded SBC or a noisy network.
+DISCOVERY_SPIN_TIME="${SCOUT2MAP_DISCOVERY_SPIN_TIME:-3}"
 REQUIRE_SENSOR=0
 REQUIRE_MOTOR=0
 FAILURES=0
@@ -20,6 +23,7 @@ Usage: ./check_mcu_interfaces.sh [options]
   --motor-device PATH   Drive MCU USB CDC device (default: /dev/scout2map_drive)
   --odom-topic NAME     Wheel odometry topic (default: /odom)
   --imu-topic NAME      Drive MCU IMU topic (default: /imu/data)
+  --spin-time SECONDS   Graph discovery wait (default: 3)
   --require-sensor      Treat missing sensor topics as failures
   --require-motor       Treat missing motor topics as failures
 EOF
@@ -35,6 +39,7 @@ while (($#)); do
     --motor-device) [[ $# -ge 2 ]] || exit 2; MOTOR_DEVICE="$2"; shift 2 ;;
     --odom-topic) [[ $# -ge 2 ]] || exit 2; ODOM_TOPIC="$2"; shift 2 ;;
     --imu-topic) [[ $# -ge 2 ]] || exit 2; IMU_TOPIC="$2"; shift 2 ;;
+    --spin-time) [[ $# -ge 2 ]] || exit 2; DISCOVERY_SPIN_TIME="$2"; shift 2 ;;
     --require-sensor) REQUIRE_SENSOR=1; shift ;;
     --require-motor) REQUIRE_MOTOR=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -67,13 +72,29 @@ check_device() {
   fi
 }
 
+# One discovery pass for the whole run. Calling `ros2 topic type` per topic
+# spawns a fresh node each time and each gets only a moment to discover the
+# graph, so results come back inconsistent on a busy machine.
+TOPIC_SNAPSHOT=''
+
+snapshot_topics() {
+  TOPIC_SNAPSHOT="$(ros2 topic list -t --spin-time "$DISCOVERY_SPIN_TIME" 2>/dev/null)"
+  if [[ -z "$TOPIC_SNAPSHOT" ]]; then
+    warn 'no topics discovered; is a bridge running and ROS_DOMAIN_ID matching?'
+  fi
+}
+
 check_topic() {
   local topic="$1"
   local expected_type="$2"
   local required="$3"
+  local line
   local actual_type
-  actual_type="$(ros2 topic type "$topic" 2>/dev/null | head -n 1)"
-  if [[ -z "$actual_type" ]]; then
+  # `ros2 topic list -t` prints: /topic [pkg/msg/Type]
+  line="$(grep -m1 -F -- "$topic [" <<<"$TOPIC_SNAPSHOT")"
+  actual_type="${line#*[}"
+  actual_type="${actual_type%]}"
+  if [[ -z "$line" ]]; then
     ((required)) && fail "missing topic: $topic" || warn "missing topic: $topic"
   elif [[ "$actual_type" == "$expected_type" ]]; then
     pass "topic: $topic ($actual_type)"
@@ -110,6 +131,8 @@ if command -v ros2 >/dev/null 2>&1; then
     fail 'scout2map_bridge is not installed or not sourced'
   ros2 pkg prefix scout2map_msgs >/dev/null 2>&1 && pass 'ROS package: scout2map_msgs' ||
     fail 'scout2map_msgs is not installed or not sourced'
+
+  snapshot_topics
 
   # Sensor fusion MCU contract, scout2map_bridge sensor_bridge node
   check_topic /sensors/env_snapshot scout2map_msgs/msg/EnvSnapshot "$REQUIRE_SENSOR"

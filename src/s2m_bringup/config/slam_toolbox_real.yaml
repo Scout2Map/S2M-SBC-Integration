@@ -1,0 +1,46 @@
+slam_toolbox:
+  ros__parameters:
+    # Real hardware runs on wall time. There is no /clock publisher on board,
+    # so leaving this true freezes the node with no error message.
+    use_sim_time: false
+
+    # false means the node performs its own configure and activate. The launch
+    # file that starts it must still drive the transitions if it uses a plain
+    # Node action, which is why this repo includes slam_toolbox's own launch.
+    use_lifecycle_manager: false
+
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame: odom
+    map_frame: map
+
+    # slam_toolbox's own default is the ground projection frame, which
+    # s2m_description does not define. The mismatch surfaces only as
+    # "Failed to compute odom pose".
+    base_frame: base_link
+
+    scan_topic: /scan
+    mode: mapping
+
+    resolution: 0.05
+    max_laser_range: 12.0
+    minimum_time_interval: 0.2
+    map_update_interval: 2.0
+
+    transform_publish_period: 0.05
+
+    # Wider than the simulation value: the RPLiDAR stamps a scan at its start
+    # and USB CDC adds latency on top, so 0.2s drops scans on real hardware.
+    transform_timeout: 1.0
+    tf_buffer_duration: 30.0
+
+    minimum_travel_distance: 0.10
+    minimum_travel_heading: 0.10
+    use_scan_matching: true
+    use_scan_barycenter: true
+    do_loop_closing: true

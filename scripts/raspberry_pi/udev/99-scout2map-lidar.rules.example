@@ -1,0 +1,25 @@
+# Stable device name for the RPLiDAR C1.
+#
+# The C1 enumerates through a Silicon Labs CP210x USB-UART bridge as
+# /dev/ttyUSB*, so its number follows plug order. The two MCUs are USB CDC
+# (/dev/ttyACM*) and never collide with it, but a second CP210x device would.
+#
+# Confirm the IDs before installing:
+#   udevadm info --query=property --name=/dev/ttyUSB0 | grep -E 'ID_VENDOR_ID|ID_MODEL_ID'
+#
+# If ID_VENDOR_ID is not 10c4 or ID_MODEL_ID is not ea60, replace the values
+# below with what the command reports.
+#
+# If another CP210x adapter is ever attached, distinguish them by serial:
+#   udevadm info -a -n /dev/ttyUSB0 | grep -m1 '{serial}'
+# then add ATTRS{serial}=="..." to the matching rule.
+#
+# Install:
+#   sudo cp 99-scout2map-lidar.rules.example /etc/udev/rules.d/99-scout2map-lidar.rules
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Verify:
+#   ls -l /dev/scout2map_lidar
+
+# RPLiDAR C1 (Silicon Labs CP2102 USB-UART bridge)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="scout2map_lidar", GROUP="dialout", MODE="0660"
