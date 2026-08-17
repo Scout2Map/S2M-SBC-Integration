@@ -58,7 +58,7 @@ dependencies.repos는 재현 가능한 통합 기준점을 고정한다. 의존 
 | headless 자동 복귀 | ros2 launch s2m_bringup s2m_return_home_sim.launch.py headless:=true use_rviz:=false | WSL 고장 주입 검증 |
 | 가스 위험 지도 | ros2 launch scout_gas sim_with_gas.launch.py | gas와 marker |
 | 센서 가상 입력 | ros2 launch scout2map_bridge fake_sensors.launch.py | 센서 토픽 주기 |
-| Pico 실입력 | ros2 launch scout2map_bridge pico_bridge.launch.py | 프레임 파싱과 토픽 |
+| MCU 실입력 | ros2 launch s2m_bringup s2m_onboard_bridge.launch.py | 프레임 파싱, 토픽, static TF |
 
 시뮬레이션의 상세 절차는 simulation-validation-guide.md를 따른다.
 
@@ -82,11 +82,16 @@ Slam Toolbox pose graph가 필요하면 serialize_map 서비스를 별도로 호
     ros2 topic list
     ros2 topic hz /imu/data
     ros2 topic echo /imu/data --once
-    ros2 topic hz /gas
-    ros2 topic echo /bridge/status --once
+    ros2 topic hz /sensors/env_snapshot
+    ros2 topic echo /sensors/status --once
+    ros2 topic echo /drive/status --once
+    ros2 topic echo /drive/link_ok --once
 
-bridge/status는 Pico 센서 브리지 상태이며 주행 제어 STM32의 링크 상태가 아니다.
-자동 복귀 안전 판단에는 별도의 주행 링크 상태 토픽이 필요하다.
+sensors/status는 Pico 센서 브리지 상태이며 주행 제어 STM32의 링크 상태가 아니다.
+주행 링크 판정은 drive/status를 drive_link_adapter가 해석해 발행하는
+drive/link_ok를 사용한다. 두 토픽을 서로 대체해서는 안 된다.
+
+토픽과 프레임의 전체 계약은 bridge-interface-contract.md를 따른다.
 
 ## 6. 정적 검사
 

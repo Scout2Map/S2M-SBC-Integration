@@ -75,17 +75,22 @@ VID/PID/serial을 확인해 udev 규칙으로
 ```bash
 udevadm info --query=property --name=/dev/ttyACM0
 source ~/scout2map_env.sh
-ros2 launch scout2map_bridge pico_bridge.launch.py
+ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
 
 ./scripts/raspberry_pi/check_mcu_interfaces.sh \
   --sensor-device /dev/scout2map_pico \
   --motor-device /dev/scout2map_drive \
-  --require-sensor
+  --require-sensor --require-motor
 ```
 
-현재 센서 bridge는 Pico 입력만 처리합니다. STM32 drive bridge가 추가되고
-`/cmd_vel`과 `/wheel/odom` 계약이 확정된 뒤에 `--require-motor`를 합격 조건으로
-사용합니다.
+`s2m_onboard_bridge.launch.py`는 센서 브리지와 주행 브리지를 함께 시작하고,
+`drive/odom`과 `drive/imu`를 `/odom`, `/imu/data`로 remap하며, URDF에 없는
+`sensor_fusion`과 `range_link` static TF를 발행합니다. 브리지 하나만 확인할
+때는 `use_drive_bridge:=false` 또는 `use_sensor_bridge:=false`를 사용합니다.
+
+토픽과 프레임의 전체 목록은
+[MCU 브리지 인터페이스 계약](../../docs/integration/bridge-interface-contract.md)에
+정리되어 있습니다.
 
 ## 5. RPLIDAR C1
 

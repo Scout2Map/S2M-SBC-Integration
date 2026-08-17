@@ -36,24 +36,34 @@ encoder counts 값을 보정한다.
 |---|---|---|
 | LiDAR | /scan | lidar_link, m |
 | IMU | /imu/data | imu_link, SI |
-| 휠 오도메트리 | /wheel/odom | odom to base_link |
-| 융합 오도메트리 | /odom | odom to base_link |
+| 휠 오도메트리 | /odom | odom to base_link, drive/odom remap |
 | 모터 명령 | /cmd_vel | m/s, rad/s |
+| 주행 상태 | /drive/status | scout2map_msgs/msg/DriveStatus |
+| 주행 링크 상태 | /drive/link_ok | std_msgs/msg/Bool, drive_link_adapter 발행 |
+| 거리 센서 | /drive/range | range_link, m |
+| 배터리 | /drive/battery | sensor_msgs/msg/BatteryState |
+| 환경 센서 스냅샷 | /sensors/env_snapshot | sensor_fusion |
+| 센서 브리지 상태 | /sensors/status | Pico 상태 전용 |
 | 관제 heartbeat | /control/heartbeat | SBC 단절 판정 |
-| 주행 링크 상태 | /drive/link_ok | STM32 연결 상태 |
-| 센서 브리지 상태 | /bridge/status | Pico 상태 전용 |
 
-bridge/status를 주행 링크 상태로 재사용하면 안 된다. STM32 브리지는 수신 시각,
-CRC 오류, heartbeat 또는 응답 timeout을 종합해 drive/link_ok를 발행해야 한다.
+sensors/status를 주행 링크 상태로 재사용하면 안 된다. 주행 브리지는 수신 시각,
+CRC 오류, 응답 timeout을 종합해 DriveStatus.link_ok를 발행하고, drive_link_adapter가
+estop, stall, cmd timeout, batt_dead를 함께 반영해 drive/link_ok로 축약한다.
 
-현재 Hardware xacro는 lidar_link와 imu_link를 정의한다. 실제 RPLiDAR 또는 센서
-launch의 frame_id를 동일하게 맞추고 Gazebo 센서의 프레임도 명시적으로 검증한다.
+robot_localization을 도입하기 전까지 /odom은 휠 오도메트리이다. EKF를 추가하면
+drive_bridge의 publish_tf를 false로 바꾸고 remap을 /drive/odom으로 되돌린다.
+
+현재 Hardware xacro는 lidar_link와 imu_link를 정의한다. sensor_fusion과 range_link는
+정의하지 않으므로 s2m_onboard_bridge.launch.py의 static TF로 보충한다. 이 오프셋은
+측정값이 아니므로 실차에서 측정한 뒤 교체하거나 xacro에 링크를 추가한다.
 
 ## 5. TF와 위치 추정
 
     ros2 run tf2_ros tf2_echo odom base_link
     ros2 run tf2_ros tf2_echo base_link lidar_link
     ros2 run tf2_ros tf2_echo base_link imu_link
+    ros2 run tf2_ros tf2_echo base_link sensor_fusion
+    ros2 run tf2_ros tf2_echo base_link range_link
 
 SLAM 단계에서는 map to odom을 slam_toolbox가, odom to base_link를 오도메트리
 계층이 한 번만 발행해야 한다. 동일 TF를 두 노드가 중복 발행하지 않는지 확인한다.
@@ -66,16 +76,17 @@ SLAM 단계에서는 map to odom을 slam_toolbox가, odom to base_link를 오도
 4. Nav2 목표 수행 시 장애물 정지, 경로 재계획, 제동 거리를 기록한다.
 5. 저마찰 바닥에서 휠 오도메트리와 IMU yaw 차이를 비교해 슬립 기준을 정한다.
 
-현재 저장소에는 실차 EKF, STM32 구동 브리지, AMCL 기반 onboard bringup이
-완성되어 있지 않다. 이 세 계층을 구현하고 토픽 remap과 TF 소유권을 확정해야
-실차 SLAM/Nav2 완료로 판단할 수 있다.
+STM32 구동 브리지는 scout2map_bridge의 drive_bridge로 제공되며 토픽 remap과 TF
+소유권은 s2m_onboard_bridge.launch.py에서 확정했다. 실차 EKF와 AMCL 기반 onboard
+bringup은 아직 없으므로 이 두 계층을 구현해야 실차 SLAM/Nav2 완료로 판단할 수 있다.
 
 ## 7. 자동 복귀 활성화 조건
 
 실차 자동 복귀는 다음 항목이 모두 완료된 후 활성화한다.
 
 - SBC에서 STM32로 가는 단일 최종 cmd_vel 게이트가 있다.
-- drive/link_ok가 실제 왕복 통신 상태를 반영한다.
+- drive/link_ok가 실제 왕복 통신 상태를 반영한다. drive_link_adapter를 실행하고
+  USB 케이블을 물리적으로 분리해 1초 안에 false로 바뀌는지 확인한다.
 - 저장 지도와 AMCL에서 시작 좌표를 안정적으로 복원한다.
 - 출발점까지 경로가 없거나 진행이 멈추면 제한 시간 안에 정지한다.
 - 관제망 단절과 SBC 자체 장애를 구분한다.

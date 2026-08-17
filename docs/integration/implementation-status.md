@@ -31,7 +31,7 @@
 | slip world | Gazebo Harmonic | 요철/마찰 구간 통과 시 odometry·IMU 변화 기록 |
 | 실차 SLAM | UGV + RPLIDAR + odometry | 반복 경로 지도·TF 안정성과 loop closure 기록 |
 | Nav2 주행 | UGV | 충돌 없이 동일 목표 세트 10회 중 9회 이상 도달 |
-| 주행 MCU 링크 | UGV + drive bridge | `/cmd_vel` 변환, `/wheel/odom`, watchdog 정지 확인 |
+| 주행 MCU 링크 | UGV + drive bridge | `/cmd_vel` 변환, `/odom`, `/drive/link_ok`, watchdog 정지 확인 |
 | 지도 이벤트 좌표 | UGV 또는 rosbag | 센서 timestamp 기반 TF 조회와 위치 오차 측정 |
 | 자동 복귀 실차 | UGV | 관제망 단절 시 출발점 도착, MCU 링크·TF 단절 시 안전 정지 |
 | 추가 고장 주입 | Gazebo | TF 단절, 무진행, 제한 시간 초과에서 SAFE_STOP 확인 |

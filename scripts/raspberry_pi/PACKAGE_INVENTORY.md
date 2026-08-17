@@ -22,7 +22,7 @@ RPLIDAR C1 드라이버는 `--with-rplidar` 사용 시 Slamtec의 `sllidar_ros2`
 | 구성 | 패키지/용도 |
 |---|---|
 | S2M-Hardware | `s2m_description`, 실차 xacro와 Gazebo slip world |
-| S2M-MCU_Bridge_Node | `scout2map_bridge`, `scout2map_msgs`, Pico USB CDC |
+| S2M-MCU-BridgeNode | `scout2map_bridge`, `scout2map_msgs`, Pico/STM32 USB CDC |
 
 ## 선택 설치
 

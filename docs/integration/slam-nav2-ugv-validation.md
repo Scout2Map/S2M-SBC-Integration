@@ -5,7 +5,7 @@
 SLAM을 실행하기 전에 다음 데이터 흐름이 각각 단독으로 검증돼야 한다.
 
 - `/scan`: RPLiDAR C1, `sensor_msgs/LaserScan`, 올바른 `frame_id`
-- `/wheel/odom`: encoder 기반 wheel odometry
+- `/odom`: encoder 기반 wheel odometry (drive_bridge의 drive/odom remap)
 - `/imu/data`: BNO055, ENU와 SI 단위
 - `/odometry/filtered`: wheel odom과 IMU를 융합한 EKF 출력
 - TF: `map -> odom -> base_link -> rplidar_link/imu_link`
@@ -34,7 +34,7 @@ ros2 run tf2_ros tf2_echo base_link imu_link
 
 ### S1. 정지 시험
 
-로봇을 60초 동안 정지하고 `/scan`, `/imu/data`, `/wheel/odom`, `/odometry/filtered`를 기록한다.
+로봇을 60초 동안 정지하고 `/scan`, `/imu/data`, `/odom`, `/odometry/filtered`를 기록한다.
 
 - encoder tick이 증가하지 않는다.
 - filtered pose가 지속적으로 이동하거나 회전하지 않는다.

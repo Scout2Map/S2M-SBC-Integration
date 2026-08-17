@@ -21,6 +21,12 @@ install(PROGRAMS
   RENAME cmd_vel_safety_gate
 )
 
+install(PROGRAMS
+  scripts/drive_link_adapter.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME drive_link_adapter
+)
+
 install(FILES
   scripts/return_home_policy.py
   DESTINATION lib/${PROJECT_NAME}

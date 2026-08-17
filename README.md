@@ -10,7 +10,9 @@ Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을 실행하기
 - SLAM Toolbox와 Nav2의 저사양 시뮬레이션 설정
 - 관제망 단절 시 Nav2 출발점 복귀와 주행 링크·TF 장애 안전 정지 시뮬레이션
 - 선택성 가스 센서, 육각형 위험 지도, 이벤트 JSON과 occupancy map 저장
-- Pico 센서 USB CDC 장치와 ROS 토픽 상태 점검
+- Pico 센서와 STM32 주행 MCU의 USB CDC 장치, ROS 토픽, TF 프레임 점검
+- 주행 브리지 `DriveStatus`를 자동 복귀 정책의 `/drive/link_ok`로 변환
+- 임계값 이벤트 엔진(`scout2map_event`) 워크스페이스 통합
 - RPLIDAR C1 드라이버 및 선택형 OpenCV/ONNX Runtime 설치
 - Python/XML/YAML/Markdown/셸 정적 검사 자동화
 
@@ -21,6 +23,7 @@ S2M-SBC-Integration/
 ├── .github/workflows/
 │   └── static-checks.yml          # 정적 검사 CI
 ├── docs/integration/
+│   ├── bridge-interface-contract.md  # MCU 브리지 토픽·프레임 계약
 │   ├── implementation-status.md   # 구현·검증 상태
 │   ├── map-marker-coordinate-design.md
 │   ├── repository-baseline-2026-08-13.md
@@ -211,30 +214,52 @@ ros2 launch scout_gas gas_demo.launch.py
 모델은 기능 검증용 가우시안 모델이며 실제 센서 보정값이나 물리 확산 모델로 사용하면
 안 됩니다.
 
-## Pico USB CDC 확인
+## MCU 브리지 실행과 확인
 
-Pico에는 재연결 후에도 유지되는 udev 장치명 `/dev/scout2map_pico` 사용을 권장합니다.
-장치명 생성 절차는 [udev 안내](scripts/raspberry_pi/udev/README.md)를 따릅니다.
+두 MCU 모두 재연결 후에도 유지되는 udev 장치명 `/dev/scout2map_pico`,
+`/dev/scout2map_drive` 사용을 권장합니다. 장치명 생성 절차는
+[udev 안내](scripts/raspberry_pi/udev/README.md)를 따릅니다.
 
 ```bash
 source ~/scout2map_env.sh
-ros2 launch scout2map_bridge pico_bridge.launch.py
+ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
 
 ./scripts/raspberry_pi/check_mcu_interfaces.sh \
   --sensor-device /dev/scout2map_pico \
-  --require-sensor
+  --motor-device /dev/scout2map_drive \
+  --require-sensor --require-motor
 ```
 
-센서 검사에서 확인하는 주요 토픽은 다음과 같습니다.
+`s2m_onboard_bridge.launch.py`는 세 가지를 함께 처리합니다.
 
-| 토픽 | 타입 |
-|---|---|
-| `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` |
-| `/bridge/status` | `scout2map_msgs/msg/BridgeStatus` |
+- `scout2map_bridge`의 `sensor_bridge`와 `drive_bridge`를 시작합니다.
+- `drive/odom`과 `drive/imu`를 이 저장소의 Nav2/SLAM 설정이 읽는 `/odom`,
+  `/imu/data`로 remap합니다.
+- URDF에 링크가 없는 `sensor_fusion`, `range_link` 프레임의 static TF를
+  발행합니다.
+- `drive_link_adapter`를 실행해 `DriveStatus`를 자동 복귀 정책이 구독하는
+  `/drive/link_ok`(`std_msgs/msg/Bool`)로 변환합니다.
 
-주행 MCU 연동이 준비된 환경에서는 `/dev/scout2map_drive`, `/cmd_vel`,
-`/wheel/odom`을 연결한 뒤 `--require-motor`를 추가합니다. 주행 링크가 끊긴 상태에서
-자동 복귀를 시도하지 말고 watchdog 안전 정지를 우선해야 합니다.
+검사에서 확인하는 주요 토픽은 다음과 같습니다.
+
+| 토픽 | 타입 | 발행 주체 |
+|---|---|---|
+| `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` | `sensor_bridge` |
+| `/sensors/status` | `scout2map_msgs/msg/SensorStatus` | `sensor_bridge` |
+| `/odom` | `nav_msgs/msg/Odometry` | `drive_bridge` (remap) |
+| `/imu/data` | `sensor_msgs/msg/Imu` | `drive_bridge` (remap) |
+| `/drive/status` | `scout2map_msgs/msg/DriveStatus` | `drive_bridge` |
+| `/drive/link_ok` | `std_msgs/msg/Bool` | `drive_link_adapter` |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | Nav2 또는 조종 노드 |
+| `/events` | `std_msgs/msg/String` | `scout2map_event` (선택) |
+
+전체 계약과 V1.0.0 대비 변경 이력은
+[MCU 브리지 인터페이스 계약](docs/integration/bridge-interface-contract.md)에
+정리되어 있습니다. 주행 링크가 끊긴 상태에서 자동 복귀를 시도하지 말고 watchdog
+안전 정지를 우선해야 합니다.
+
+static TF의 기본 오프셋은 측정값이 아닙니다. 실차에서 측정한 뒤 launch 인자로
+교체하거나 `s2m_description` xacro에 링크를 추가하십시오.
 
 ## 설치 상태 확인
 
@@ -270,5 +295,9 @@ bash -n scripts/raspberry_pi/*.sh
   후자는 즉시 안전 정지 대상입니다.
 - 실차 첫 시험은 바퀴를 띄우고 물리 비상정지와 전류 제한 전원을 준비한 상태에서
   수행하십시오.
+- 시뮬레이션 launch와 `s2m_onboard_bridge.launch.py`를 동시에 실행하지 마십시오.
+  `/odom`, `/imu/data`, `/cmd_vel`과 `odom -> base_link` TF가 모두 충돌합니다.
+- `robot_localization`을 도입하면 `drive_bridge`의 `publish_tf`를 `false`로 바꾸어
+  `odom -> base_link` 발행 주체를 하나로 유지하십시오.
 
 구현 상태와 실차 검증 순서는 [통합 문서](docs/integration/README.md)에 정리되어 있습니다.

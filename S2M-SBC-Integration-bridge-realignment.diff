@@ -1,0 +1,1233 @@
+diff -ruN orig/CHANGES-bridge-realignment.md S2M-SBC-Integration/CHANGES-bridge-realignment.md
+--- orig/CHANGES-bridge-realignment.md	1970-01-01 00:00:00.000000000 +0000
++++ S2M-SBC-Integration/CHANGES-bridge-realignment.md	2026-08-16 15:45:52.725206182 +0000
+@@ -0,0 +1,90 @@
++# MCU 브리지 재정합 변경 요약
++
++이 문서는 커밋 메시지와 PR 설명을 쓰기 위한 임시 요약이다. 반영이 끝나면 삭제해도
++된다.
++
++## 배경
++
++`dependencies.repos`가 `S2M-MCU-BridgeNode`의 V1.0.0(`f373787`)에 고정되어 있었다.
++그 이후 브리지 저장소는 이름이 바뀌고 주행 브리지가 추가되면서 노드, launch,
++메시지, 토픽 이름이 모두 달라졌다. 이 저장소의 문서와 점검 스크립트는 존재하지
++않는 이름을 가리키고 있었다.
++
++## 발견한 불일치
++
++| 구분 | 이 저장소가 참조하던 것 | 브리지의 실제 이름 |
++|---|---|---|
++| 저장소 URL | `S2M-MCU_Bridge_Node` | `S2M-MCU-BridgeNode` |
++| launch | `pico_bridge.launch.py` | `sensor_bridge.launch.py` |
++| 상태 메시지 | `BridgeStatus` | `SensorStatus` |
++| 상태 토픽 | `/bridge/status` | `/sensors/status` |
++| 휠 오도메트리 | `/wheel/odom` | `/drive/odom` |
++| IMU | `/imu/data` | `/drive/imu` |
++| 주행 링크 | `/drive/link_ok` (Bool) | 없음, `/drive/status`의 필드 |
++| 프레임 | `sensor_fusion`, `range_link` | URDF에 링크 없음 |
++
++`EnvSnapshot`과 `AirQuality`의 필드 정의는 V1.0.0과 동일하다. 이 두 메시지를
++파싱하는 하위 소비자는 영향을 받지 않는다.
++
++가장 중요한 두 가지는 다음과 같다.
++
++1. `return_home`이 구독하는 `/drive/link_ok`를 아무도 발행하지 않는다. 실차에서
++   자동 복귀 노드가 `drive_seen == false` 상태로 고정된다. 시뮬레이션에서는
++   `sim_fault_injector`가 Bool을 발행하므로 드러나지 않았다.
++2. 브리지가 메시지 header에 찍는 `sensor_fusion`, `range_link` 프레임이 URDF에
++   없다. TF 변환이 실패하므로 환경 이벤트를 지도 좌표에 배치할 수 없다.
++
++## 변경 내용
++
++### 신규 파일
++
++- `src/s2m_bringup/scripts/drive_link_adapter.py`
++  `DriveStatus`를 `/drive/link_ok`(`std_msgs/msg/Bool`)로 축약한다. 링크 자체뿐
++  아니라 `estop_latched`, `fault_stall`, `cmd_timeout`, `batt_dead`도 반영한다.
++  `batt_critical`은 기본적으로 복귀를 막지 않는다.
++- `src/s2m_bringup/config/drive_link_adapter.yaml`
++- `src/s2m_bringup/launch/s2m_onboard_bridge.launch.py`
++  실차 브리지 두 개와 어댑터를 함께 시작하고, `drive/odom`과 `drive/imu`를
++  `/odom`, `/imu/data`로 remap하며, 누락 프레임의 static TF를 발행한다.
++- `docs/integration/bridge-interface-contract.md`
++  브리지 토픽·메시지·프레임의 단일 참조표.
++
++### 수정 파일
++
++- `dependencies.repos`: 저장소 이름 수정, 브리지 핀을 `5955d877`로, Hardware 핀을
++  `c3d55f3a`로 갱신, `S2M-Event-Engine` 추가
++- `tools/static_check.py`: 커밋 핀 개수 고정(2개) 검사를 URL 개수와 일치하는지
++  검사하도록 일반화
++- `scripts/raspberry_pi/check_compatibility.sh`: `scout2map_event` 패키지 확인 추가
++- `scripts/raspberry_pi/check_mcu_interfaces.sh`: 토픽 계약 전면 교체, TF 검사와
++  `--odom-topic` / `--imu-topic` 옵션 추가
++- `scripts/raspberry_pi/udev/99-scout2map-usb.rules.example`: placeholder를 실제
++  VID/PID로 교체
++- `scripts/raspberry_pi/udev/README.md`: 규칙 파일 중복 설치 경고, `dialout` 안내
++- `scripts/raspberry_pi/README.md`, `README.md`, `src/s2m_bringup/README.md`
++- `src/s2m_bringup/CMakeLists.txt`, `package.xml`
++- `docs/integration/` 아래 `README.md`, `sbc-runbook.md`,
++  `real-hardware-validation.md`, `slam-nav2-ugv-validation.md`,
++  `implementation-status.md`, `repository-baseline-2026-08-13.md`
++- `scripts/raspberry_pi/PACKAGE_INVENTORY.md`
++
++## 남은 작업
++
++- `s2m_onboard_bridge.launch.py`의 static TF 오프셋은 측정값이 아니다. 실차에서
++  측정한 뒤 교체하거나, `s2m_description` xacro에 `sensor_fusion`과 `range_link`
++  링크를 추가하고 `publish_sensor_frames:=false`로 전환한다.
++- `robot_localization` 도입 시 `odom_topic:=/drive/odom`으로 되돌리고
++  `drive_bridge`의 `publish_tf`를 `false`로 바꾼다.
++- `scout_gas`는 시뮬레이션 가우시안 모델만 사용하며 `/sensors/env_snapshot`을
++  구독하지 않는다. 실센서 기반 위험 지도는 별도 작업이 필요하다.
++- 주행 이벤트 3종과 관제망 통신 이벤트 2종은 아직 어느 노드도 발행하지 않는다.
++
++## 검증
++
++```bash
++python3 tools/static_check.py
++bash -n scripts/raspberry_pi/*.sh
++python3 -m py_compile src/s2m_bringup/scripts/drive_link_adapter.py
++```
++
++ROS 노드 실행, TF 연결, 실차 동작은 검증하지 않았다.
+diff -ruN orig/README.md S2M-SBC-Integration/README.md
+--- orig/README.md	2026-08-16 15:46:01.085038072 +0000
++++ S2M-SBC-Integration/README.md	2026-08-16 15:45:13.239304603 +0000
+@@ -10,7 +10,9 @@
+ - SLAM Toolbox와 Nav2의 저사양 시뮬레이션 설정
+ - 관제망 단절 시 Nav2 출발점 복귀와 주행 링크·TF 장애 안전 정지 시뮬레이션
+ - 선택성 가스 센서, 육각형 위험 지도, 이벤트 JSON과 occupancy map 저장
+-- Pico 센서 USB CDC 장치와 ROS 토픽 상태 점검
++- Pico 센서와 STM32 주행 MCU의 USB CDC 장치, ROS 토픽, TF 프레임 점검
++- 주행 브리지 `DriveStatus`를 자동 복귀 정책의 `/drive/link_ok`로 변환
++- 임계값 이벤트 엔진(`scout2map_event`) 워크스페이스 통합
+ - RPLIDAR C1 드라이버 및 선택형 OpenCV/ONNX Runtime 설치
+ - Python/XML/YAML/Markdown/셸 정적 검사 자동화
+ 
+@@ -21,6 +23,7 @@
+ ├── .github/workflows/
+ │   └── static-checks.yml          # 정적 검사 CI
+ ├── docs/integration/
++│   ├── bridge-interface-contract.md  # MCU 브리지 토픽·프레임 계약
+ │   ├── implementation-status.md   # 구현·검증 상태
+ │   ├── map-marker-coordinate-design.md
+ │   ├── repository-baseline-2026-08-13.md
+@@ -211,30 +214,52 @@
+ 모델은 기능 검증용 가우시안 모델이며 실제 센서 보정값이나 물리 확산 모델로 사용하면
+ 안 됩니다.
+ 
+-## Pico USB CDC 확인
++## MCU 브리지 실행과 확인
+ 
+-Pico에는 재연결 후에도 유지되는 udev 장치명 `/dev/scout2map_pico` 사용을 권장합니다.
+-장치명 생성 절차는 [udev 안내](scripts/raspberry_pi/udev/README.md)를 따릅니다.
++두 MCU 모두 재연결 후에도 유지되는 udev 장치명 `/dev/scout2map_pico`,
++`/dev/scout2map_drive` 사용을 권장합니다. 장치명 생성 절차는
++[udev 안내](scripts/raspberry_pi/udev/README.md)를 따릅니다.
+ 
+ ```bash
+ source ~/scout2map_env.sh
+-ros2 launch scout2map_bridge pico_bridge.launch.py
++ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
+ 
+ ./scripts/raspberry_pi/check_mcu_interfaces.sh \
+   --sensor-device /dev/scout2map_pico \
+-  --require-sensor
++  --motor-device /dev/scout2map_drive \
++  --require-sensor --require-motor
+ ```
+ 
+-센서 검사에서 확인하는 주요 토픽은 다음과 같습니다.
++`s2m_onboard_bridge.launch.py`는 세 가지를 함께 처리합니다.
+ 
+-| 토픽 | 타입 |
+-|---|---|
+-| `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` |
+-| `/bridge/status` | `scout2map_msgs/msg/BridgeStatus` |
++- `scout2map_bridge`의 `sensor_bridge`와 `drive_bridge`를 시작합니다.
++- `drive/odom`과 `drive/imu`를 이 저장소의 Nav2/SLAM 설정이 읽는 `/odom`,
++  `/imu/data`로 remap합니다.
++- URDF에 링크가 없는 `sensor_fusion`, `range_link` 프레임의 static TF를
++  발행합니다.
++- `drive_link_adapter`를 실행해 `DriveStatus`를 자동 복귀 정책이 구독하는
++  `/drive/link_ok`(`std_msgs/msg/Bool`)로 변환합니다.
++
++검사에서 확인하는 주요 토픽은 다음과 같습니다.
++
++| 토픽 | 타입 | 발행 주체 |
++|---|---|---|
++| `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` | `sensor_bridge` |
++| `/sensors/status` | `scout2map_msgs/msg/SensorStatus` | `sensor_bridge` |
++| `/odom` | `nav_msgs/msg/Odometry` | `drive_bridge` (remap) |
++| `/imu/data` | `sensor_msgs/msg/Imu` | `drive_bridge` (remap) |
++| `/drive/status` | `scout2map_msgs/msg/DriveStatus` | `drive_bridge` |
++| `/drive/link_ok` | `std_msgs/msg/Bool` | `drive_link_adapter` |
++| `/cmd_vel` | `geometry_msgs/msg/Twist` | Nav2 또는 조종 노드 |
++| `/events` | `std_msgs/msg/String` | `scout2map_event` (선택) |
++
++전체 계약과 V1.0.0 대비 변경 이력은
++[MCU 브리지 인터페이스 계약](docs/integration/bridge-interface-contract.md)에
++정리되어 있습니다. 주행 링크가 끊긴 상태에서 자동 복귀를 시도하지 말고 watchdog
++안전 정지를 우선해야 합니다.
+ 
+-주행 MCU 연동이 준비된 환경에서는 `/dev/scout2map_drive`, `/cmd_vel`,
+-`/wheel/odom`을 연결한 뒤 `--require-motor`를 추가합니다. 주행 링크가 끊긴 상태에서
+-자동 복귀를 시도하지 말고 watchdog 안전 정지를 우선해야 합니다.
++static TF의 기본 오프셋은 측정값이 아닙니다. 실차에서 측정한 뒤 launch 인자로
++교체하거나 `s2m_description` xacro에 링크를 추가하십시오.
+ 
+ ## 설치 상태 확인
+ 
+@@ -270,5 +295,9 @@
+   후자는 즉시 안전 정지 대상입니다.
+ - 실차 첫 시험은 바퀴를 띄우고 물리 비상정지와 전류 제한 전원을 준비한 상태에서
+   수행하십시오.
++- 시뮬레이션 launch와 `s2m_onboard_bridge.launch.py`를 동시에 실행하지 마십시오.
++  `/odom`, `/imu/data`, `/cmd_vel`과 `odom -> base_link` TF가 모두 충돌합니다.
++- `robot_localization`을 도입하면 `drive_bridge`의 `publish_tf`를 `false`로 바꾸어
++  `odom -> base_link` 발행 주체를 하나로 유지하십시오.
+ 
+ 구현 상태와 실차 검증 순서는 [통합 문서](docs/integration/README.md)에 정리되어 있습니다.
+diff -ruN orig/dependencies.repos S2M-SBC-Integration/dependencies.repos
+--- orig/dependencies.repos	2026-08-16 15:46:01.085144901 +0000
++++ S2M-SBC-Integration/dependencies.repos	2026-08-16 15:44:42.931154654 +0000
+@@ -2,8 +2,12 @@
+   s2m_hardware:
+     type: git
+     url: https://github.com/Scout2Map/S2M-Hardware.git
+-    version: 720ea6bc12691a10b5a7ac3b36fdaa968455213e
++    version: c3d55f3a65e27e1d6169f6964840b9c8334b1229
+   s2m_mcu_bridge_node:
+     type: git
+-    url: https://github.com/Scout2Map/S2M-MCU_Bridge_Node.git
+-    version: f373787c5f249f84c00a86837bf5677665bbc45d
++    url: https://github.com/Scout2Map/S2M-MCU-BridgeNode.git
++    version: 5955d8773283dac0404f0a078391e740d277b3cb
++  s2m_event_engine:
++    type: git
++    url: https://github.com/Scout2Map/S2M-Event-Engine.git
++    version: f39a090a3209d4ec843d455ef07eddef51f92d62
+diff -ruN orig/docs/integration/README.md S2M-SBC-Integration/docs/integration/README.md
+--- orig/docs/integration/README.md	2026-08-16 15:46:01.085347154 +0000
++++ S2M-SBC-Integration/docs/integration/README.md	2026-08-16 15:12:40.069324238 +0000
+@@ -2,6 +2,7 @@
+ 
+ | 문서 | 내용 |
+ |---|---|
++| [MCU 브리지 인터페이스 계약](bridge-interface-contract.md) | 브리지 토픽·메시지·프레임과 SBC 소비 이름 |
+ | [SBC 실행 절차](sbc-runbook.md) | 설치·빌드·기능별 명령과 지도 저장 |
+ | [시뮬레이션 검증](simulation-validation-guide.md) | 요철·슬립·SLAM/Nav2·자동 복귀 재현 절차 |
+ | [구현 상태](implementation-status.md) | 소스 구현 범위와 실행 환경에서 남은 검증 |
+diff -ruN orig/docs/integration/bridge-interface-contract.md S2M-SBC-Integration/docs/integration/bridge-interface-contract.md
+--- orig/docs/integration/bridge-interface-contract.md	1970-01-01 00:00:00.000000000 +0000
++++ S2M-SBC-Integration/docs/integration/bridge-interface-contract.md	2026-08-16 16:27:28.355206560 +0000
+@@ -0,0 +1,192 @@
++# MCU 브리지 인터페이스 계약
++
++이 문서는 `S2M-MCU-BridgeNode`가 실제로 발행하는 토픽, 메시지 타입, 프레임을
++SBC 쪽에서 소비하는 이름과 나란히 정리한 것이다. 브리지 저장소의
++`scout2map_bridge/PROTOCOL.md`와 `scout2map_msgs/README.md`가 원본이며 이 문서는
++SBC 통합 관점의 사본이다. 값이 어긋나면 브리지 저장소를 따른다.
++
++기준 버전은 `dependencies.repos`에 고정된 커밋이다.
++
++| 항목 | 값 |
++|---|---|
++| 저장소 | `https://github.com/Scout2Map/S2M-MCU-BridgeNode.git` |
++| 고정 커밋 | `5955d877` |
++| 패키지 | `scout2map_bridge`, `scout2map_msgs` |
++
++## 1. 저장소 이름 변경 이력
++
++브리지 저장소는 `S2M-MCU_Bridge_Node`에서 `S2M-MCU-BridgeNode`로 이름이 바뀌었다.
++GitHub redirect 덕분에 옛 URL도 clone은 되지만 `vcs import`가 남기는 remote가
++옛 이름으로 굳으므로 새 이름을 사용한다.
++
++## 2. 센서 퓨전 MCU (Pico 2)
++
++실행 노드는 `sensor_bridge`이다. `pico_bridge`는 V1.0.0의 이름이며 더 이상 없다.
++
++```bash
++ros2 launch scout2map_bridge sensor_bridge.launch.py
++```
++
++| 토픽 | 타입 | 비고 |
++|---|---|---|
++| `/sensors/temperature` | `sensor_msgs/msg/Temperature` | AHT21 |
++| `/sensors/humidity` | `sensor_msgs/msg/RelativeHumidity` | AHT21 |
++| `/sensors/illuminance` | `sensor_msgs/msg/Illuminance` | BH1750 |
++| `/sensors/air_quality` | `scout2map_msgs/msg/AirQuality` | ENS160 |
++| `/sensors/particulate` | `scout2map_msgs/msg/Particulate` | PMS7003 |
++| `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` | 전 센서 최신값 캐시, 기본 5Hz |
++| `/sensors/status` | `scout2map_msgs/msg/SensorStatus` | 링크 상태, 기본 1Hz |
++| `/sensors/raw_json` | `std_msgs/msg/String` | `publish_raw_json: true`일 때만 |
++
++V1.0.0에서 바뀐 부분은 다음 두 가지다.
++
++- `/bridge/status`가 `/sensors/status`로 바뀌었다.
++- `BridgeStatus`가 `SensorStatus`로 바뀌었고 `framing_overflows` 필드가 추가되었다.
++
++`EnvSnapshot`과 `AirQuality`의 필드는 V1.0.0과 동일하므로 이벤트 엔진 쪽 파싱
++로직은 영향을 받지 않는다.
++
++프레임은 `sensor_bridge.yaml`의 `frame_id`이며 기본값은 `sensor_fusion`이다.
++
++## 3. 주행 제어 MCU (STM32F103)
++
++실행 노드는 `drive_bridge`이다. V1.0.0에는 존재하지 않았다.
++
++```bash
++ros2 launch scout2map_bridge drive_bridge.launch.py
++```
++
++| 브리지 기본 토픽 | 타입 | 이 저장소에서 쓰는 이름 |
++|---|---|---|
++| `/drive/odom` | `nav_msgs/msg/Odometry` | `/odom` 으로 remap |
++| `/drive/imu` | `sensor_msgs/msg/Imu` | `/imu/data` 로 remap |
++| `/drive/range` | `sensor_msgs/msg/Range` | 그대로 |
++| `/drive/battery` | `sensor_msgs/msg/BatteryState` | 그대로 |
++| `/drive/status` | `scout2map_msgs/msg/DriveStatus` | 그대로 |
++| `/drive/diagnostics` | `scout2map_msgs/msg/DriveDiagnostics` | 서비스 요청 시에만 발행 |
++| `/cmd_vel` (구독) | `geometry_msgs/msg/Twist` | 그대로 |
++
++remap은 `s2m_bringup/launch/s2m_onboard_bridge.launch.py`에서 수행한다. 브리지
++저장소는 자신의 이름공간만 책임지고, 시스템 토픽 배치는 이 저장소가 정한다.
++
++서비스는 다음 네 개이며 모두 `std_srvs/srv/Trigger`이다.
++
++- `/drive/estop`
++- `/drive/clear_fault`
++- `/drive/reset_odom`
++- `/drive/request_diagnostics`
++
++### `/drive/link_ok`는 브리지가 발행하지 않는다
++
++자동 복귀 정책은 `std_msgs/msg/Bool` 타입의 `/drive/link_ok`를 구독한다. 브리지는
++이 토픽을 발행하지 않고 대신 `DriveStatus.link_ok`와 여러 fault 비트를 발행한다.
++
++이를 잇는 것이 `s2m_bringup`의 `drive_link_adapter` 노드이다. 다음 조건 중 하나라도
++성립하면 `false`를 발행한다.
++
++- `DriveStatus`가 `status_timeout_sec` 동안 도착하지 않음
++- `link_ok == false`
++- `estop_latched`, `fault_stall`, `cmd_timeout`, `batt_dead` 중 하나가 참
++
++`batt_critical`은 기본적으로 복귀를 막지 않는다. 전력이 부족한 상태로 제자리에
++멈추는 것보다 출발점까지 돌아오는 편이 낫기 때문이다.
++
++## 4. TF 프레임
++
++| 프레임 | 정의 위치 | 상태 |
++|---|---|---|
++| `base_link` | `s2m_description` xacro | 정의됨 |
++| `lidar_link` | `s2m_description` xacro | 정의됨 |
++| `imu_link` | `s2m_description` xacro | 정의됨 |
++| `odom` | `drive_bridge`가 `odom -> base_link` 발행 | 정의됨 |
++| `sensor_fusion` | 없음 | `s2m_onboard_bridge.launch.py`의 static TF로 보충 |
++| `range_link` | 없음 | `s2m_onboard_bridge.launch.py`의 static TF로 보충 |
++
++`sensor_fusion`과 `range_link`는 브리지가 메시지 header에 찍지만 URDF에 대응 링크가
++없다. static TF를 발행하지 않으면 해당 메시지를 지도 좌표로 변환할 수 없고, 결과적으로
++이벤트 마커를 배치할 수 없다.
++
++launch의 기본 오프셋은 **측정값이 아니다.** 실차에서 측정한 뒤 교체한다.
++
++```bash
++ros2 launch s2m_bringup s2m_onboard_bridge.launch.py \
++  sensor_fusion_x:=-0.048 sensor_fusion_z:=0.112
++```
++
++장기적으로는 `s2m_description` xacro에 두 링크를 추가하고 이 static TF를
++`publish_sensor_frames:=false`로 끄는 것이 옳다.
++
++## 5. TF 소유권
++
++`odom -> base_link`는 한 노드만 발행해야 한다.
++
++| 구성 | `odom -> base_link` 발행 주체 | `drive_bridge`의 `publish_tf` |
++|---|---|---|
++| 실차, EKF 없음 | `drive_bridge` | `true` (기본값) |
++| 실차, `robot_localization` 사용 | `ekf_node` | `false` 로 변경 필요 |
++| Gazebo 시뮬레이션 | `diff_drive` 플러그인 | 브리지를 실행하지 않음 |
++
++시뮬레이션과 실차 브리지를 동시에 실행하지 않는다. `/odom`, `/imu/data`, `/cmd_vel`,
++`odom -> base_link`가 모두 충돌한다.
++
++## 6. 이벤트 엔진 소비 계약
++
++**이벤트 발행 주체는 `S2M-Event-Engine`(`scout2map_event`) 하나다.** 이 저장소의 어떤
++노드도 `/events`를 발행하지 않는다. 위험 판정 로직을 추가할 일이 생기면 이 저장소가
++아니라 이벤트 엔진에 넣는다.
++
++| 방향 | 토픽 | 타입 | 이 저장소에서의 출처 |
++|---|---|---|---|
++| 구독 | `/sensors/env_snapshot` | `scout2map_msgs/msg/EnvSnapshot` | `sensor_bridge` |
++| 구독 | `/drive/status` | `scout2map_msgs/msg/DriveStatus` | `drive_bridge` |
++| 구독 | `/imu/data` | `sensor_msgs/msg/Imu` | `drive_bridge` (remap) |
++| 구독 | `/cmd_vel` | `geometry_msgs/msg/Twist` | Nav2 또는 조종 노드 |
++| 구독 | `/control/heartbeat` | `std_msgs/msg/Empty` | 관제 서버 |
++| 구독 | `/threshold/set` | `std_msgs/msg/String` | React 관제 UI |
++| 발행 | `/events` | `std_msgs/msg/String` (JSON) | 이벤트 엔진 단독 |
++| 발행 | `/event/*` | `std_msgs/msg/String` | 이벤트 엔진 단독 |
++
++QoS는 양쪽 모두 RELIABLE, `KEEP_LAST`, depth 10이므로 정합한다. `EnvSnapshot`의 필드는
++V1.0.0과 동일하므로 브리지 갱신의 영향을 받지 않는다.
++
++이벤트 엔진은 `map -> base_link` TF를 조회해 좌표를 붙인다. 따라서 SLAM 또는 AMCL이
++실행 중이 아니면 모든 이벤트가 `coordinate_status: "unresolved"`로 나간다. 이는 오류가
++아니라 설계된 동작이다.
++
++### return_home과의 책임 분담
++
++`return_home`도 `/control/heartbeat`를 구독하지만 발행 책임과는 무관하다.
++
++| 노드 | heartbeat 사용 목적 | 산출물 |
++|---|---|---|
++| `scout2map_event` | 통신 이벤트 마커 판정 | `/events` |
++| `return_home` | 자동 복귀 또는 안전 정지 결정 | `/return_home/status`, Nav2 goal |
++
++안전 인터록은 이벤트 엔진이 죽어 있어도 동작해야 하므로 `return_home`이 heartbeat를
++직접 감시하는 구조를 유지한다. 다만 두 timeout이 따로 관리되므로, 이벤트 엔진의
++`COMM_DEGRADED` 임계값(기본 1.5초)을 `return_home`의 `heartbeat_timeout_sec`
++(기본 3.0초)보다 작게 유지한다. 그래야 자동 복귀가 걸리기 전에 운영자가 품질 저하를
++먼저 본다.
++
++### 링크 3종 구분
++
++| 신호 | 의미 | 처리 |
++|---|---|---|
++| `EnvSnapshot.link_ok` | Pico 센서 MCU 링크 | 이벤트 `SENSOR_LINK_LOSS` |
++| `/drive/link_ok` | STM32 주행 MCU 링크 | 이벤트 아님, 즉시 안전 정지 |
++| `/control/heartbeat` | 관제망 | 이벤트 `COMM_DEGRADED` / `COMM_LOST` |
++
++주행 링크 단절은 마커를 찍을 상황이 아니라 즉시 멈춰야 하는 상황이므로 이벤트로
++만들지 않는다.
++
++## 7. 정합성 점검
++
++```bash
++./scripts/raspberry_pi/check_mcu_interfaces.sh \
++  --sensor-device /dev/scout2map_pico \
++  --motor-device /dev/scout2map_drive \
++  --require-sensor --require-motor
++```
++
++이 스크립트가 검사하는 항목이 곧 위 표의 실행 가능한 형태이다. 브리지 저장소를
++업데이트했다면 `dependencies.repos`의 커밋 핀과 이 문서, 스크립트를 함께 갱신한다.
+diff -ruN orig/docs/integration/implementation-status.md S2M-SBC-Integration/docs/integration/implementation-status.md
+--- orig/docs/integration/implementation-status.md	2026-08-16 15:46:01.085456982 +0000
++++ S2M-SBC-Integration/docs/integration/implementation-status.md	2026-08-16 15:12:08.954654523 +0000
+@@ -31,7 +31,7 @@
+ | slip world | Gazebo Harmonic | 요철/마찰 구간 통과 시 odometry·IMU 변화 기록 |
+ | 실차 SLAM | UGV + RPLIDAR + odometry | 반복 경로 지도·TF 안정성과 loop closure 기록 |
+ | Nav2 주행 | UGV | 충돌 없이 동일 목표 세트 10회 중 9회 이상 도달 |
+-| 주행 MCU 링크 | UGV + drive bridge | `/cmd_vel` 변환, `/wheel/odom`, watchdog 정지 확인 |
++| 주행 MCU 링크 | UGV + drive bridge | `/cmd_vel` 변환, `/odom`, `/drive/link_ok`, watchdog 정지 확인 |
+ | 지도 이벤트 좌표 | UGV 또는 rosbag | 센서 timestamp 기반 TF 조회와 위치 오차 측정 |
+ | 자동 복귀 실차 | UGV | 관제망 단절 시 출발점 도착, MCU 링크·TF 단절 시 안전 정지 |
+ | 추가 고장 주입 | Gazebo | TF 단절, 무진행, 제한 시간 초과에서 SAFE_STOP 확인 |
+diff -ruN orig/docs/integration/real-hardware-validation.md S2M-SBC-Integration/docs/integration/real-hardware-validation.md
+--- orig/docs/integration/real-hardware-validation.md	2026-08-16 15:46:01.085763187 +0000
++++ S2M-SBC-Integration/docs/integration/real-hardware-validation.md	2026-08-16 15:12:08.954375956 +0000
+@@ -36,24 +36,34 @@
+ |---|---|---|
+ | LiDAR | /scan | lidar_link, m |
+ | IMU | /imu/data | imu_link, SI |
+-| 휠 오도메트리 | /wheel/odom | odom to base_link |
+-| 융합 오도메트리 | /odom | odom to base_link |
++| 휠 오도메트리 | /odom | odom to base_link, drive/odom remap |
+ | 모터 명령 | /cmd_vel | m/s, rad/s |
++| 주행 상태 | /drive/status | scout2map_msgs/msg/DriveStatus |
++| 주행 링크 상태 | /drive/link_ok | std_msgs/msg/Bool, drive_link_adapter 발행 |
++| 거리 센서 | /drive/range | range_link, m |
++| 배터리 | /drive/battery | sensor_msgs/msg/BatteryState |
++| 환경 센서 스냅샷 | /sensors/env_snapshot | sensor_fusion |
++| 센서 브리지 상태 | /sensors/status | Pico 상태 전용 |
+ | 관제 heartbeat | /control/heartbeat | SBC 단절 판정 |
+-| 주행 링크 상태 | /drive/link_ok | STM32 연결 상태 |
+-| 센서 브리지 상태 | /bridge/status | Pico 상태 전용 |
+ 
+-bridge/status를 주행 링크 상태로 재사용하면 안 된다. STM32 브리지는 수신 시각,
+-CRC 오류, heartbeat 또는 응답 timeout을 종합해 drive/link_ok를 발행해야 한다.
+-
+-현재 Hardware xacro는 lidar_link와 imu_link를 정의한다. 실제 RPLiDAR 또는 센서
+-launch의 frame_id를 동일하게 맞추고 Gazebo 센서의 프레임도 명시적으로 검증한다.
++sensors/status를 주행 링크 상태로 재사용하면 안 된다. 주행 브리지는 수신 시각,
++CRC 오류, 응답 timeout을 종합해 DriveStatus.link_ok를 발행하고, drive_link_adapter가
++estop, stall, cmd timeout, batt_dead를 함께 반영해 drive/link_ok로 축약한다.
++
++robot_localization을 도입하기 전까지 /odom은 휠 오도메트리이다. EKF를 추가하면
++drive_bridge의 publish_tf를 false로 바꾸고 remap을 /drive/odom으로 되돌린다.
++
++현재 Hardware xacro는 lidar_link와 imu_link를 정의한다. sensor_fusion과 range_link는
++정의하지 않으므로 s2m_onboard_bridge.launch.py의 static TF로 보충한다. 이 오프셋은
++측정값이 아니므로 실차에서 측정한 뒤 교체하거나 xacro에 링크를 추가한다.
+ 
+ ## 5. TF와 위치 추정
+ 
+     ros2 run tf2_ros tf2_echo odom base_link
+     ros2 run tf2_ros tf2_echo base_link lidar_link
+     ros2 run tf2_ros tf2_echo base_link imu_link
++    ros2 run tf2_ros tf2_echo base_link sensor_fusion
++    ros2 run tf2_ros tf2_echo base_link range_link
+ 
+ SLAM 단계에서는 map to odom을 slam_toolbox가, odom to base_link를 오도메트리
+ 계층이 한 번만 발행해야 한다. 동일 TF를 두 노드가 중복 발행하지 않는지 확인한다.
+@@ -66,16 +76,17 @@
+ 4. Nav2 목표 수행 시 장애물 정지, 경로 재계획, 제동 거리를 기록한다.
+ 5. 저마찰 바닥에서 휠 오도메트리와 IMU yaw 차이를 비교해 슬립 기준을 정한다.
+ 
+-현재 저장소에는 실차 EKF, STM32 구동 브리지, AMCL 기반 onboard bringup이
+-완성되어 있지 않다. 이 세 계층을 구현하고 토픽 remap과 TF 소유권을 확정해야
+-실차 SLAM/Nav2 완료로 판단할 수 있다.
++STM32 구동 브리지는 scout2map_bridge의 drive_bridge로 제공되며 토픽 remap과 TF
++소유권은 s2m_onboard_bridge.launch.py에서 확정했다. 실차 EKF와 AMCL 기반 onboard
++bringup은 아직 없으므로 이 두 계층을 구현해야 실차 SLAM/Nav2 완료로 판단할 수 있다.
+ 
+ ## 7. 자동 복귀 활성화 조건
+ 
+ 실차 자동 복귀는 다음 항목이 모두 완료된 후 활성화한다.
+ 
+ - SBC에서 STM32로 가는 단일 최종 cmd_vel 게이트가 있다.
+-- drive/link_ok가 실제 왕복 통신 상태를 반영한다.
++- drive/link_ok가 실제 왕복 통신 상태를 반영한다. drive_link_adapter를 실행하고
++  USB 케이블을 물리적으로 분리해 1초 안에 false로 바뀌는지 확인한다.
+ - 저장 지도와 AMCL에서 시작 좌표를 안정적으로 복원한다.
+ - 출발점까지 경로가 없거나 진행이 멈추면 제한 시간 안에 정지한다.
+ - 관제망 단절과 SBC 자체 장애를 구분한다.
+diff -ruN orig/docs/integration/repository-baseline-2026-08-13.md S2M-SBC-Integration/docs/integration/repository-baseline-2026-08-13.md
+--- orig/docs/integration/repository-baseline-2026-08-13.md	2026-08-16 15:46:01.085841732 +0000
++++ S2M-SBC-Integration/docs/integration/repository-baseline-2026-08-13.md	2026-08-16 15:13:09.559027981 +0000
+@@ -7,6 +7,7 @@
+ | S2M-SBC-Integration | main ac238ed / sbc-integration 20e2e79 | main은 최소 골격, 통합 작업 기준은 sbc-integration |
+ | S2M-Hardware | c3d55f3 | 최신 변경은 기구 CAD이며 시뮬레이션 기준은 720ea6b 유지 |
+ | S2M-MCU_Bridge_Node | f373787 | Pico 가상 발행기와 USB CDC 브리지 |
++
+ | S2M-FW-SensorFusion | c0659f6 | 센서 융합 펌웨어 v1.2 기준 |
+ | S2M-FW-DrivingControl | 07a8ee9 | 엔코더 폐루프와 watchdog 구현, SBC USB 프로토콜은 후속 통합 |
+ | S2M-Web-Monitoring | 8ce152e | 웹 모니터링 초안, 이벤트 계약 확정 필요 |
+@@ -19,5 +20,22 @@
+ 브리지가 제공하는 확정 계약이 아니다. 전자는 관제 연결 감시, 후자는 STM32 주행
+ 링크 상태로 분리해 후속 브리지 구현에서 연결해야 한다.
+ 
++## 갱신: MCU 브리지 재정합
++
++확인일: 2026-08-17
++
++| 저장소 | 갱신 커밋 | 변경 내용 |
++|---|---|---|
++| S2M-MCU-BridgeNode | f373787 -> 5955d87 | 저장소 이름 변경, `drive_bridge` 추가, `BridgeStatus` -> `SensorStatus` |
++| S2M-Hardware | 720ea6b -> c3d55f3 | 기구 CAD만 변경, `UGV_description` 내용은 동일 |
++
++브리지가 V1.0.0에서 크게 바뀌면서 이 저장소의 launch 이름, 상태 토픽, 오도메트리
++토픽 참조가 모두 실재하지 않는 이름을 가리키고 있었다. 위 커밋으로 핀을 옮기고
++문서와 점검 스크립트를 실제 계약에 맞추었다.
++
++`/drive/link_ok`는 여전히 브리지가 직접 발행하지 않는다. `DriveStatus`를 해석해
++이 토픽을 만드는 `drive_link_adapter`를 `s2m_bringup`에 추가해 계약을 잇는다.
++상세 내용은 bridge-interface-contract.md를 따른다.
++
+ 원격 저장소 조회 결과 위 커밋은 2026-08-13 기준 각 저장소의 최신 HEAD다. 이후 조직
+ 저장소 변경을 통합할 때에는 `dependencies.repos`의 고정 커밋과 이 표를 함께 갱신한다.
+diff -ruN orig/docs/integration/sbc-runbook.md S2M-SBC-Integration/docs/integration/sbc-runbook.md
+--- orig/docs/integration/sbc-runbook.md	2026-08-16 15:46:01.085978104 +0000
++++ S2M-SBC-Integration/docs/integration/sbc-runbook.md	2026-08-16 15:12:08.954144605 +0000
+@@ -58,7 +58,7 @@
+ | headless 자동 복귀 | ros2 launch s2m_bringup s2m_return_home_sim.launch.py headless:=true use_rviz:=false | WSL 고장 주입 검증 |
+ | 가스 위험 지도 | ros2 launch scout_gas sim_with_gas.launch.py | gas와 marker |
+ | 센서 가상 입력 | ros2 launch scout2map_bridge fake_sensors.launch.py | 센서 토픽 주기 |
+-| Pico 실입력 | ros2 launch scout2map_bridge pico_bridge.launch.py | 프레임 파싱과 토픽 |
++| MCU 실입력 | ros2 launch s2m_bringup s2m_onboard_bridge.launch.py | 프레임 파싱, 토픽, static TF |
+ 
+ 시뮬레이션의 상세 절차는 simulation-validation-guide.md를 따른다.
+ 
+@@ -82,11 +82,16 @@
+     ros2 topic list
+     ros2 topic hz /imu/data
+     ros2 topic echo /imu/data --once
+-    ros2 topic hz /gas
+-    ros2 topic echo /bridge/status --once
++    ros2 topic hz /sensors/env_snapshot
++    ros2 topic echo /sensors/status --once
++    ros2 topic echo /drive/status --once
++    ros2 topic echo /drive/link_ok --once
++
++sensors/status는 Pico 센서 브리지 상태이며 주행 제어 STM32의 링크 상태가 아니다.
++주행 링크 판정은 drive/status를 drive_link_adapter가 해석해 발행하는
++drive/link_ok를 사용한다. 두 토픽을 서로 대체해서는 안 된다.
+ 
+-bridge/status는 Pico 센서 브리지 상태이며 주행 제어 STM32의 링크 상태가 아니다.
+-자동 복귀 안전 판단에는 별도의 주행 링크 상태 토픽이 필요하다.
++토픽과 프레임의 전체 계약은 bridge-interface-contract.md를 따른다.
+ 
+ ## 6. 정적 검사
+ 
+diff -ruN orig/docs/integration/slam-nav2-ugv-validation.md S2M-SBC-Integration/docs/integration/slam-nav2-ugv-validation.md
+--- orig/docs/integration/slam-nav2-ugv-validation.md	2026-08-16 15:46:01.086171421 +0000
++++ S2M-SBC-Integration/docs/integration/slam-nav2-ugv-validation.md	2026-08-16 15:12:08.954529420 +0000
+@@ -5,7 +5,7 @@
+ SLAM을 실행하기 전에 다음 데이터 흐름이 각각 단독으로 검증돼야 한다.
+ 
+ - `/scan`: RPLiDAR C1, `sensor_msgs/LaserScan`, 올바른 `frame_id`
+-- `/wheel/odom`: encoder 기반 wheel odometry
++- `/odom`: encoder 기반 wheel odometry (drive_bridge의 drive/odom remap)
+ - `/imu/data`: BNO055, ENU와 SI 단위
+ - `/odometry/filtered`: wheel odom과 IMU를 융합한 EKF 출력
+ - TF: `map -> odom -> base_link -> rplidar_link/imu_link`
+@@ -34,7 +34,7 @@
+ 
+ ### S1. 정지 시험
+ 
+-로봇을 60초 동안 정지하고 `/scan`, `/imu/data`, `/wheel/odom`, `/odometry/filtered`를 기록한다.
++로봇을 60초 동안 정지하고 `/scan`, `/imu/data`, `/odom`, `/odometry/filtered`를 기록한다.
+ 
+ - encoder tick이 증가하지 않는다.
+ - filtered pose가 지속적으로 이동하거나 회전하지 않는다.
+diff -ruN orig/scripts/raspberry_pi/PACKAGE_INVENTORY.md S2M-SBC-Integration/scripts/raspberry_pi/PACKAGE_INVENTORY.md
+--- orig/scripts/raspberry_pi/PACKAGE_INVENTORY.md	2026-08-16 15:46:01.086577289 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/PACKAGE_INVENTORY.md	2026-08-16 15:12:08.954768593 +0000
+@@ -22,7 +22,7 @@
+ | 구성 | 패키지/용도 |
+ |---|---|
+ | S2M-Hardware | `s2m_description`, 실차 xacro와 Gazebo slip world |
+-| S2M-MCU_Bridge_Node | `scout2map_bridge`, `scout2map_msgs`, Pico USB CDC |
++| S2M-MCU-BridgeNode | `scout2map_bridge`, `scout2map_msgs`, Pico/STM32 USB CDC |
+ 
+ ## 선택 설치
+ 
+diff -ruN orig/scripts/raspberry_pi/README.md S2M-SBC-Integration/scripts/raspberry_pi/README.md
+--- orig/scripts/raspberry_pi/README.md	2026-08-16 15:46:01.086667063 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/README.md	2026-08-16 15:11:11.586883425 +0000
+@@ -75,17 +75,22 @@
+ ```bash
+ udevadm info --query=property --name=/dev/ttyACM0
+ source ~/scout2map_env.sh
+-ros2 launch scout2map_bridge pico_bridge.launch.py
++ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
+ 
+ ./scripts/raspberry_pi/check_mcu_interfaces.sh \
+   --sensor-device /dev/scout2map_pico \
+   --motor-device /dev/scout2map_drive \
+-  --require-sensor
++  --require-sensor --require-motor
+ ```
+ 
+-현재 센서 bridge는 Pico 입력만 처리합니다. STM32 drive bridge가 추가되고
+-`/cmd_vel`과 `/wheel/odom` 계약이 확정된 뒤에 `--require-motor`를 합격 조건으로
+-사용합니다.
++`s2m_onboard_bridge.launch.py`는 센서 브리지와 주행 브리지를 함께 시작하고,
++`drive/odom`과 `drive/imu`를 `/odom`, `/imu/data`로 remap하며, URDF에 없는
++`sensor_fusion`과 `range_link` static TF를 발행합니다. 브리지 하나만 확인할
++때는 `use_drive_bridge:=false` 또는 `use_sensor_bridge:=false`를 사용합니다.
++
++토픽과 프레임의 전체 목록은
++[MCU 브리지 인터페이스 계약](../../docs/integration/bridge-interface-contract.md)에
++정리되어 있습니다.
+ 
+ ## 5. RPLIDAR C1
+ 
+diff -ruN orig/scripts/raspberry_pi/check_compatibility.sh S2M-SBC-Integration/scripts/raspberry_pi/check_compatibility.sh
+--- orig/scripts/raspberry_pi/check_compatibility.sh	2026-08-16 15:46:01.086898978 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/check_compatibility.sh	2026-08-16 15:44:56.219795105 +0000
+@@ -89,7 +89,8 @@
+ fi
+ 
+ for package_name in rclpy nav2_bringup slam_toolbox robot_localization \
+-  s2m_bringup s2m_description scout_gas scout2map_bridge scout2map_msgs; do
++  s2m_bringup s2m_description scout_gas scout2map_bridge scout2map_msgs \
++  scout2map_event; do
+   check_ros_package "$package_name"
+ done
+ if [[ "$PROFILE" == sim ]]; then
+diff -ruN orig/scripts/raspberry_pi/check_mcu_interfaces.sh S2M-SBC-Integration/scripts/raspberry_pi/check_mcu_interfaces.sh
+--- orig/scripts/raspberry_pi/check_mcu_interfaces.sh	2026-08-16 15:46:01.086969636 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/check_mcu_interfaces.sh	2026-08-16 15:44:56.219964650 +0000
+@@ -3,6 +3,11 @@
+ 
+ SENSOR_DEVICE="${SCOUT2MAP_SENSOR_MCU_DEVICE:-/dev/scout2map_pico}"
+ MOTOR_DEVICE="${SCOUT2MAP_MOTOR_MCU_DEVICE:-/dev/scout2map_drive}"
++# s2m_onboard_bridge.launch.py remaps drive/odom and drive/imu onto these by
++# default. Override when robot_localization takes ownership of /odom.
++ODOM_TOPIC="${SCOUT2MAP_ODOM_TOPIC:-/odom}"
++IMU_TOPIC="${SCOUT2MAP_IMU_TOPIC:-/imu/data}"
++BASE_FRAME="${SCOUT2MAP_BASE_FRAME:-base_link}"
+ REQUIRE_SENSOR=0
+ REQUIRE_MOTOR=0
+ FAILURES=0
+@@ -13,6 +18,8 @@
+ Usage: ./check_mcu_interfaces.sh [options]
+   --sensor-device PATH  Pico 2 USB CDC device (default: /dev/scout2map_pico)
+   --motor-device PATH   Drive MCU USB CDC device (default: /dev/scout2map_drive)
++  --odom-topic NAME     Wheel odometry topic (default: /odom)
++  --imu-topic NAME      Drive MCU IMU topic (default: /imu/data)
+   --require-sensor      Treat missing sensor topics as failures
+   --require-motor       Treat missing motor topics as failures
+ EOF
+@@ -26,6 +33,8 @@
+   case "$1" in
+     --sensor-device) [[ $# -ge 2 ]] || exit 2; SENSOR_DEVICE="$2"; shift 2 ;;
+     --motor-device) [[ $# -ge 2 ]] || exit 2; MOTOR_DEVICE="$2"; shift 2 ;;
++    --odom-topic) [[ $# -ge 2 ]] || exit 2; ODOM_TOPIC="$2"; shift 2 ;;
++    --imu-topic) [[ $# -ge 2 ]] || exit 2; IMU_TOPIC="$2"; shift 2 ;;
+     --require-sensor) REQUIRE_SENSOR=1; shift ;;
+     --require-motor) REQUIRE_MOTOR=1; shift ;;
+     -h|--help) usage; exit 0 ;;
+@@ -73,6 +82,23 @@
+   fi
+ }
+ 
++check_frame() {
++  local frame="$1"
++  local required="$2"
++  local output
++  if ! command -v ros2 >/dev/null 2>&1; then
++    return
++  fi
++  # tf2_echo never exits on its own, so match on its output instead of $?
++  output="$(timeout 5 ros2 run tf2_ros tf2_echo "$BASE_FRAME" "$frame" 2>/dev/null | head -n 40)"
++  if grep -q 'Translation' <<<"$output"; then
++    pass "TF: $BASE_FRAME -> $frame"
++  else
++    ((required)) && fail "missing TF: $BASE_FRAME -> $frame" ||
++      warn "missing TF: $BASE_FRAME -> $frame"
++  fi
++}
++
+ printf 'Scout2Map MCU interface check\n\n'
+ command -v ros2 >/dev/null 2>&1 && pass 'command: ros2' || fail 'missing command: ros2'
+ 
+@@ -85,13 +111,27 @@
+   ros2 pkg prefix scout2map_msgs >/dev/null 2>&1 && pass 'ROS package: scout2map_msgs' ||
+     fail 'scout2map_msgs is not installed or not sourced'
+ 
++  # Sensor fusion MCU contract, scout2map_bridge sensor_bridge node
+   check_topic /sensors/env_snapshot scout2map_msgs/msg/EnvSnapshot "$REQUIRE_SENSOR"
+-  check_topic /bridge/status scout2map_msgs/msg/BridgeStatus "$REQUIRE_SENSOR"
++  check_topic /sensors/air_quality scout2map_msgs/msg/AirQuality "$REQUIRE_SENSOR"
++  check_topic /sensors/status scout2map_msgs/msg/SensorStatus "$REQUIRE_SENSOR"
++
++  # Drive MCU contract, scout2map_bridge drive_bridge node
+   check_topic /cmd_vel geometry_msgs/msg/Twist "$REQUIRE_MOTOR"
+-  check_topic /wheel/odom nav_msgs/msg/Odometry "$REQUIRE_MOTOR"
+-  if ((REQUIRE_MOTOR == 0)); then
+-    warn 'the referenced bridge repository has no STM32 drive bridge yet; motor topics are provisional'
+-  fi
++  check_topic /drive/status scout2map_msgs/msg/DriveStatus "$REQUIRE_MOTOR"
++  check_topic "$ODOM_TOPIC" nav_msgs/msg/Odometry "$REQUIRE_MOTOR"
++  check_topic "$IMU_TOPIC" sensor_msgs/msg/Imu "$REQUIRE_MOTOR"
++
++  # Published by s2m_bringup drive_link_adapter, not by the bridge itself
++  check_topic /drive/link_ok std_msgs/msg/Bool "$REQUIRE_MOTOR"
++
++  # Event engine output, only present when scout2map_event is running
++  check_topic /events std_msgs/msg/String 0
++
++  # Frames the bridges stamp onto messages. sensor_fusion and range_link have
++  # no URDF link, so s2m_onboard_bridge.launch.py must supply the static TF.
++  check_frame sensor_fusion "$REQUIRE_SENSOR"
++  check_frame range_link "$REQUIRE_MOTOR"
+ fi
+ 
+ if [[ -e "$SENSOR_DEVICE" && -e "$MOTOR_DEVICE" &&
+diff -ruN orig/scripts/raspberry_pi/udev/99-scout2map-usb.rules.example S2M-SBC-Integration/scripts/raspberry_pi/udev/99-scout2map-usb.rules.example
+--- orig/scripts/raspberry_pi/udev/99-scout2map-usb.rules.example	2026-08-16 15:46:01.088046253 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/udev/99-scout2map-usb.rules.example	2026-08-16 15:07:55.383571186 +0000
+@@ -1,5 +1,21 @@
+-# Replace the placeholder values with each device's actual attributes.
+-# Keep separate serial values so reconnecting devices cannot swap roles.
++# Stable device names for the two Scout2Map MCUs.
++# Both boards enumerate as /dev/ttyACM* and the numbering follows plug order,
++# so without these rules the roles swap depending on boot timing.
++#
++# VID/PID below match scout2map_bridge/udev/99-scout2map.rules in
++# S2M-MCU-BridgeNode, which is the source of truth. Confirm with `lsusb`
++# before installing.
++#
++# ATTRS{serial} is optional here. Add it only when two boards of the SAME
++# model are attached, and check the value first:
++#   udevadm info -a -n /dev/ttyACM0 | grep -m1 '{serial}'
++#
++# Install:
++#   sudo cp 99-scout2map-usb.rules.example /etc/udev/rules.d/99-scout2map-usb.rules
++#   sudo udevadm control --reload-rules && sudo udevadm trigger
+ 
+-SUBSYSTEM=="tty", ATTRS{idVendor}=="PICO_VID", ATTRS{idProduct}=="PICO_PID", ATTRS{serial}=="PICO_SERIAL", SYMLINK+="scout2map_pico", GROUP="dialout", MODE="0660"
+-SUBSYSTEM=="tty", ATTRS{idVendor}=="DRIVE_VID", ATTRS{idProduct}=="DRIVE_PID", ATTRS{serial}=="DRIVE_SERIAL", SYMLINK+="scout2map_drive", GROUP="dialout", MODE="0660"
++# Sensor fusion MCU, Raspberry Pi Pico 2 (pico-sdk CDC default)
++SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="000a", SYMLINK+="scout2map_pico", GROUP="dialout", MODE="0660"
++
++# Drive control MCU, STM32F103C8T6 (ST virtual COM port pair, set in usb_cdc.c)
++SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="scout2map_drive", GROUP="dialout", MODE="0660"
+diff -ruN orig/scripts/raspberry_pi/udev/README.md S2M-SBC-Integration/scripts/raspberry_pi/udev/README.md
+--- orig/scripts/raspberry_pi/udev/README.md	2026-08-16 15:46:01.088208298 +0000
++++ S2M-SBC-Integration/scripts/raspberry_pi/udev/README.md	2026-08-16 15:08:25.915138614 +0000
+@@ -1,7 +1,16 @@
+ # USB CDC udev 설정
+ 
+-Pico 센서와 주행 MCU가 재연결된 뒤에도 같은 장치명을 사용하도록 VID, PID와 serial을
+-모두 사용해 udev symlink를 만듭니다.
++Pico 센서와 주행 MCU가 재연결된 뒤에도 같은 장치명을 사용하도록 udev symlink를
++만듭니다.
++
++두 MCU는 서로 다른 VID/PID를 사용하므로 (Pico 2 `2e8a:000a`, STM32F103
++`0483:5740`) 기본 규칙은 VID/PID만으로 역할을 구분합니다. 같은 모델을 두 개
++연결하는 경우에만 `ATTRS{serial}`을 추가합니다.
++
++`S2M-MCU-BridgeNode`의 `scout2map_bridge/udev/99-scout2map.rules`와 이 저장소의
++규칙은 동일한 symlink를 만듭니다. **둘 중 하나만 설치합니다.** 두 파일을 모두
++설치하면 같은 장치에 두 규칙이 적용되어 권한이 예측 불가능해집니다. 이 저장소의
++규칙은 `dialout` 그룹과 `0660`을 사용하므로 실차 SBC에서는 이쪽을 권장합니다.
+ 
+ ## 1. 장치 속성 확인
+ 
+@@ -13,15 +22,16 @@
+ udevadm info --attribute-walk --name=/dev/ttyACM0
+ ```
+ 
+-두 MCU가 같은 VID/PID를 사용할 수 있으므로 serial 없이 장치 역할을 구분하지 마십시오.
++출력된 `ID_VENDOR_ID`, `ID_MODEL_ID`가 위 값과 일치하는지 확인합니다. 일치하지
++않으면 클론 보드이므로 규칙 파일의 값을 실제 값으로 교체합니다.
+ 
+ ## 2. 규칙 작성과 설치
+ 
+-`99-scout2map-usb.rules.example`을 복사한 뒤 placeholder를 실제 값으로 바꿉니다.
++`99-scout2map-usb.rules.example`을 복사합니다. VID/PID가 위 확인 결과와 같으면
++수정 없이 그대로 사용할 수 있습니다.
+ 
+ ```bash
+ cp scripts/raspberry_pi/udev/99-scout2map-usb.rules.example /tmp/99-scout2map-usb.rules
+-nano /tmp/99-scout2map-usb.rules
+ sudo install -m 0644 /tmp/99-scout2map-usb.rules /etc/udev/rules.d/
+ sudo udevadm control --reload-rules
+ sudo udevadm trigger --subsystem-match=tty
+@@ -36,4 +46,10 @@
+ ```
+ 
+ 장치 권한은 `dialout` 그룹과 `0660`을 사용합니다. `/dev/tty*`에 `chmod 777`을 적용하지
+-마십시오.
++마십시오. 사용자 계정이 `dialout` 그룹에 없으면 포트를 열 수 없습니다.
++
++```bash
++sudo usermod -aG dialout "$USER"
++```
++
++그룹 추가 후에는 재로그인 또는 재부팅이 필요합니다.
+diff -ruN orig/src/s2m_bringup/CMakeLists.txt S2M-SBC-Integration/src/s2m_bringup/CMakeLists.txt
+--- orig/src/s2m_bringup/CMakeLists.txt	2026-08-16 15:46:01.088538785 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/CMakeLists.txt	2026-08-16 15:07:00.983114344 +0000
+@@ -21,6 +21,12 @@
+   RENAME cmd_vel_safety_gate
+ )
+ 
++install(PROGRAMS
++  scripts/drive_link_adapter.py
++  DESTINATION lib/${PROJECT_NAME}
++  RENAME drive_link_adapter
++)
++
+ install(FILES
+   scripts/return_home_policy.py
+   DESTINATION lib/${PROJECT_NAME}
+diff -ruN orig/src/s2m_bringup/README.md S2M-SBC-Integration/src/s2m_bringup/README.md
+--- orig/src/s2m_bringup/README.md	2026-08-16 15:46:01.088691263 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/README.md	2026-08-16 15:12:40.078432303 +0000
+@@ -52,7 +52,47 @@
+ ros2 service call /return_home/reset std_srvs/srv/Trigger "{}"
+ ```
+ 
+-실차 drive link 토픽과 onboard localization은 아직 별도 구현이 필요합니다.
++실차 drive link 토픽은 `drive_link_adapter`가 제공합니다. onboard localization은
++아직 별도 구현이 필요합니다.
++
++## 실차 MCU 브리지
++
++```bash
++ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
++```
++
++`scout2map_bridge`의 `sensor_bridge`와 `drive_bridge`를 시작하고, 이 저장소의
++Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
++
++| launch 인자 | 기본값 | 설명 |
++|---|---|---|
++| `use_sensor_bridge` | `true` | Pico 2 센서 브리지 실행 여부 |
++| `use_drive_bridge` | `true` | STM32 주행 브리지 실행 여부 |
++| `use_drive_link_adapter` | `true` | `DriveStatus` -> `/drive/link_ok` 변환 |
++| `odom_topic` | `/odom` | `drive/odom` remap 대상 |
++| `imu_topic` | `/imu/data` | `drive/imu` remap 대상 |
++| `publish_sensor_frames` | `true` | `sensor_fusion`, `range_link` static TF |
++| `sensor_fusion_x/y/z` | `-0.050 / 0.000 / 0.110` | 측정값 아님, 실차에서 교체 |
++| `range_link_x/y/z` | `0.132 / 0.000 / 0.050` | 측정값 아님, 실차에서 교체 |
++
++`s2m_slam_sim.launch.py`와 동시에 실행하면 `/odom`, `/imu/data`, `/cmd_vel`과
++`odom -> base_link` TF가 충돌합니다. 둘 중 하나만 실행합니다.
++
++`robot_localization`을 도입하면 `odom_topic:=/drive/odom`으로 되돌리고
++`drive_bridge`의 `publish_tf`를 `false`로 바꿉니다.
++
++### drive_link_adapter
++
++`return_home`은 `std_msgs/msg/Bool` 타입의 `/drive/link_ok`를 구독하지만 브리지는
++`scout2map_msgs/msg/DriveStatus`를 발행합니다. 이 노드가 둘을 잇습니다. 다음 조건 중
++하나라도 성립하면 `false`를 발행합니다.
++
++- `DriveStatus`가 `status_timeout_sec` 동안 도착하지 않음
++- `link_ok == false`
++- `estop_latched`, `fault_stall`, `cmd_timeout`, `batt_dead` 중 하나가 참
++
++`batt_critical`은 기본적으로 복귀를 막지 않습니다. 파라미터는
++`config/drive_link_adapter.yaml`에 있습니다.
+ 
+ ## 예상 데이터 흐름
+ 
+@@ -80,3 +120,5 @@
+   않았습니다.
+ - 저장 지도 localization/AMCL과 실차 센서·EKF를 한 번에 시작하는 launch는 별도로
+   구성해야 합니다.
++- `s2m_onboard_bridge.launch.py`의 static TF 오프셋은 측정값이 아닙니다. 이벤트
++  마커 좌표를 신뢰하기 전에 실측값으로 교체해야 합니다.
+diff -ruN orig/src/s2m_bringup/config/drive_link_adapter.yaml S2M-SBC-Integration/src/s2m_bringup/config/drive_link_adapter.yaml
+--- orig/src/s2m_bringup/config/drive_link_adapter.yaml	1970-01-01 00:00:00.000000000 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/config/drive_link_adapter.yaml	2026-08-16 15:06:54.919572569 +0000
+@@ -0,0 +1,24 @@
++drive_link_adapter:
++  ros__parameters:
++    # Real hardware runs on wall time; there is no /clock publisher on board
++    use_sim_time: false
++
++    drive_status_topic: /drive/status
++    link_topic: /drive/link_ok
++
++    # return_home uses drive_link_timeout_sec 1.0, so publish faster than that
++    publish_rate_hz: 10.0
++
++    # The drive bridge publishes DriveStatus at status_rate_hz (10Hz default).
++    # 0.5s allows several missed messages before declaring the link down.
++    status_timeout_sec: 0.5
++
++    # Conditions that block an autonomous return even when the serial link
++    # itself is alive. Set to false only for isolated bench tests.
++    estop_blocks_link: true
++    fault_blocks_link: true
++    cmd_timeout_blocks_link: true
++    batt_dead_blocks_link: true
++
++    # A critical but not dead pack should still be allowed to drive home
++    batt_critical_blocks_link: false
+diff -ruN orig/src/s2m_bringup/launch/s2m_onboard_bridge.launch.py S2M-SBC-Integration/src/s2m_bringup/launch/s2m_onboard_bridge.launch.py
+--- orig/src/s2m_bringup/launch/s2m_onboard_bridge.launch.py	1970-01-01 00:00:00.000000000 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/launch/s2m_onboard_bridge.launch.py	2026-08-16 15:06:46.803453484 +0000
+@@ -0,0 +1,142 @@
++#!/usr/bin/env python3
++"""Start the real MCU bridges with the topic and frame wiring this repo expects.
++
++scout2map_bridge owns the serial protocol and publishes under its own names
++(drive/odom, drive/status, sensors/*). This launch is where the SBC decides how
++those names map onto the SLAM/Nav2 contract, which is a system integration
++concern and therefore belongs here rather than in the bridge repository.
++
++This launch does NOT start LiDAR, SLAM or Nav2. Bring it up first, confirm the
++topics and TF, then start the mapping stack.
++"""
++
++import os
++
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch.actions import DeclareLaunchArgument
++from launch.conditions import IfCondition
++from launch.substitutions import LaunchConfiguration
++from launch_ros.actions import Node
++
++
++def generate_launch_description():
++    bridge_share = get_package_share_directory('scout2map_bridge')
++    bringup_share = get_package_share_directory('s2m_bringup')
++
++    sensor_params = os.path.join(bridge_share, 'config', 'sensor_bridge.yaml')
++    drive_params = os.path.join(bridge_share, 'config', 'drive_bridge.yaml')
++    adapter_params = os.path.join(
++        bringup_share, 'config', 'drive_link_adapter.yaml')
++
++    args = [
++        DeclareLaunchArgument('use_sensor_bridge', default_value='true'),
++        DeclareLaunchArgument('use_drive_bridge', default_value='true'),
++        DeclareLaunchArgument('use_drive_link_adapter', default_value='true'),
++
++        DeclareLaunchArgument('sensor_params_file', default_value=sensor_params),
++        DeclareLaunchArgument('drive_params_file', default_value=drive_params),
++        DeclareLaunchArgument(
++            'drive_link_adapter_params_file', default_value=adapter_params),
++
++        # Nav2 and slam_toolbox in this repo read /odom. Until an EKF owns that
++        # name, wheel odometry is published straight onto it.
++        DeclareLaunchArgument(
++            'odom_topic', default_value='/odom',
++            description='Where the drive bridge odometry is remapped to. '
++                        'Set to /drive/odom once robot_localization owns /odom.'),
++
++        # The bridge publishes Imu on drive/imu; the validation docs use
++        # /imu/data, which is also what robot_localization expects by default.
++        DeclareLaunchArgument('imu_topic', default_value='/imu/data'),
++
++        # s2m_description defines base_link, lidar_link and imu_link only. The
++        # two frames below are referenced by the bridges but have no URDF link,
++        # so without these static transforms every TF lookup on them fails.
++        DeclareLaunchArgument(
++            'publish_sensor_frames', default_value='true',
++            description='Publish static TF for sensor_fusion and range_link'),
++
++        # PROVISIONAL. Both offsets are from base_link origin, which is the
++        # centre of the platform bottom face. Measure on the built chassis and
++        # replace before trusting any marker placed with these frames.
++        DeclareLaunchArgument('sensor_fusion_x', default_value='-0.050'),
++        DeclareLaunchArgument('sensor_fusion_y', default_value='0.000'),
++        DeclareLaunchArgument('sensor_fusion_z', default_value='0.110'),
++        DeclareLaunchArgument('range_link_x', default_value='0.132'),
++        DeclareLaunchArgument('range_link_y', default_value='0.000'),
++        DeclareLaunchArgument('range_link_z', default_value='0.050'),
++    ]
++
++    sensor_bridge = Node(
++        package='scout2map_bridge',
++        executable='sensor_bridge',
++        name='sensor_bridge',
++        output='screen',
++        emulate_tty=True,
++        parameters=[LaunchConfiguration('sensor_params_file')],
++        condition=IfCondition(LaunchConfiguration('use_sensor_bridge')),
++    )
++
++    drive_bridge = Node(
++        package='scout2map_bridge',
++        executable='drive_bridge',
++        name='drive_bridge',
++        output='screen',
++        emulate_tty=True,
++        parameters=[LaunchConfiguration('drive_params_file')],
++        remappings=[
++            ('drive/odom', LaunchConfiguration('odom_topic')),
++            ('drive/imu', LaunchConfiguration('imu_topic')),
++        ],
++        condition=IfCondition(LaunchConfiguration('use_drive_bridge')),
++    )
++
++    drive_link_adapter = Node(
++        package='s2m_bringup',
++        executable='drive_link_adapter',
++        name='drive_link_adapter',
++        output='screen',
++        emulate_tty=True,
++        parameters=[LaunchConfiguration('drive_link_adapter_params_file')],
++        condition=IfCondition(LaunchConfiguration('use_drive_link_adapter')),
++    )
++
++    # static_transform_publisher takes positional args as --x --y --z ...
++    sensor_fusion_tf = Node(
++        package='tf2_ros',
++        executable='static_transform_publisher',
++        name='sensor_fusion_static_tf',
++        output='screen',
++        arguments=[
++            '--frame-id', 'base_link',
++            '--child-frame-id', 'sensor_fusion',
++            '--x', LaunchConfiguration('sensor_fusion_x'),
++            '--y', LaunchConfiguration('sensor_fusion_y'),
++            '--z', LaunchConfiguration('sensor_fusion_z'),
++        ],
++        condition=IfCondition(LaunchConfiguration('publish_sensor_frames')),
++    )
++
++    range_link_tf = Node(
++        package='tf2_ros',
++        executable='static_transform_publisher',
++        name='range_link_static_tf',
++        output='screen',
++        arguments=[
++            '--frame-id', 'base_link',
++            '--child-frame-id', 'range_link',
++            '--x', LaunchConfiguration('range_link_x'),
++            '--y', LaunchConfiguration('range_link_y'),
++            '--z', LaunchConfiguration('range_link_z'),
++        ],
++        condition=IfCondition(LaunchConfiguration('publish_sensor_frames')),
++    )
++
++    return LaunchDescription(args + [
++        sensor_bridge,
++        drive_bridge,
++        drive_link_adapter,
++        sensor_fusion_tf,
++        range_link_tf,
++    ])
+diff -ruN orig/src/s2m_bringup/package.xml S2M-SBC-Integration/src/s2m_bringup/package.xml
+--- orig/src/s2m_bringup/package.xml	2026-08-16 15:46:01.089726325 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/package.xml	2026-08-16 15:07:06.036788511 +0000
+@@ -24,6 +24,8 @@
+   <exec_depend>std_msgs</exec_depend>
+   <exec_depend>std_srvs</exec_depend>
+   <exec_depend>tf2_ros</exec_depend>
++  <exec_depend>scout2map_msgs</exec_depend>
++  <exec_depend>scout2map_bridge</exec_depend>
+ 
+   <test_depend>ament_cmake_pytest</test_depend>
+ 
+diff -ruN orig/src/s2m_bringup/scripts/drive_link_adapter.py S2M-SBC-Integration/src/s2m_bringup/scripts/drive_link_adapter.py
+--- orig/src/s2m_bringup/scripts/drive_link_adapter.py	1970-01-01 00:00:00.000000000 +0000
++++ S2M-SBC-Integration/src/s2m_bringup/scripts/drive_link_adapter.py	2026-08-16 15:06:04.691573718 +0000
+@@ -0,0 +1,135 @@
++#!/usr/bin/env python3
++"""Republish the drive bridge DriveStatus health as a plain Bool link flag.
++
++The return-home policy consumes a std_msgs/Bool on /drive/link_ok because the
++simulation fault injector has no MCU behind it. The real drive bridge instead
++publishes scout2map_msgs/DriveStatus on /drive/status, which carries link_ok
++plus the fault bits that must also inhibit an autonomous return. This node is
++the single place where those bits are collapsed into one boolean, so the
++policy node stays identical between simulation and hardware.
++"""
++
++import time
++
++import rclpy
++from rclpy.clock import Clock, ClockType
++from rclpy.node import Node
++from scout2map_msgs.msg import DriveStatus
++from std_msgs.msg import Bool
++
++
++class DriveLinkAdapter(Node):
++    """Collapse DriveStatus into the Bool contract used by return_home."""
++
++    def __init__(self):
++        super().__init__('drive_link_adapter')
++
++        self.declare_parameter('drive_status_topic', '/drive/status')
++        self.declare_parameter('link_topic', '/drive/link_ok')
++        self.declare_parameter('publish_rate_hz', 10.0)
++
++        # DriveStatus arrives at status_rate_hz (10Hz by default in the bridge
++        # config). Anything older than this is treated as no link at all.
++        self.declare_parameter('status_timeout_sec', 0.5)
++
++        # Latched estop and a stalled motor are not link faults, but a return
++        # cannot be driven through them either. Kept as flags so bench tests
++        # can isolate the pure link case.
++        self.declare_parameter('estop_blocks_link', True)
++        self.declare_parameter('fault_blocks_link', True)
++        self.declare_parameter('cmd_timeout_blocks_link', True)
++        self.declare_parameter('batt_dead_blocks_link', True)
++
++        # Battery critical still allows a return: getting home on a low pack is
++        # better than stopping in place. batt_dead is different, the firmware
++        # has already cut drive.
++        self.declare_parameter('batt_critical_blocks_link', False)
++
++        gp = self.get_parameter
++        self._timeout = float(gp('status_timeout_sec').value)
++        self._estop_blocks = bool(gp('estop_blocks_link').value)
++        self._fault_blocks = bool(gp('fault_blocks_link').value)
++        self._cmd_timeout_blocks = bool(gp('cmd_timeout_blocks_link').value)
++        self._batt_dead_blocks = bool(gp('batt_dead_blocks_link').value)
++        self._batt_critical_blocks = bool(gp('batt_critical_blocks_link').value)
++
++        self._last_status = None
++        self._last_status_mono = None
++        self._last_published = None
++        self._last_reason = ''
++
++        self._link_pub = self.create_publisher(
++            Bool, str(gp('link_topic').value), 10)
++        self.create_subscription(
++            DriveStatus,
++            str(gp('drive_status_topic').value),
++            self._on_status,
++            10,
++        )
++
++        # Steady clock so a paused or jumping /clock cannot freeze the timeout
++        rate = max(1.0, float(gp('publish_rate_hz').value))
++        self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
++        self.create_timer(1.0 / rate, self._tick, clock=self._steady_clock)
++
++        self.get_logger().info(
++            'drive_link_adapter started; waiting for DriveStatus on '
++            f"{gp('drive_status_topic').value}")
++
++    def _on_status(self, message):
++        self._last_status = message
++        self._last_status_mono = time.monotonic()
++
++    def _evaluate(self):
++        """Return (link_ok, reason). Reason is empty when healthy."""
++        if self._last_status is None or self._last_status_mono is None:
++            return False, 'no DriveStatus received yet'
++
++        age = time.monotonic() - self._last_status_mono
++        if age > self._timeout:
++            return False, f'DriveStatus stale ({age:.2f}s)'
++
++        status = self._last_status
++        if not status.link_ok:
++            return False, 'bridge reports link_ok false'
++        if self._estop_blocks and status.estop_latched:
++            return False, 'estop latched'
++        if self._fault_blocks and status.fault_stall:
++            return False, 'stall fault'
++        if self._cmd_timeout_blocks and status.cmd_timeout:
++            return False, 'MCU command timeout'
++        if self._batt_dead_blocks and status.batt_dead:
++            return False, 'battery dead, firmware cut drive'
++        if self._batt_critical_blocks and status.batt_critical:
++            return False, 'battery critical'
++        return True, ''
++
++    def _tick(self):
++        link_ok, reason = self._evaluate()
++        self._link_pub.publish(Bool(data=link_ok))
++
++        # Log only on edges, this runs at 10Hz
++        if link_ok != self._last_published:
++            if link_ok:
++                self.get_logger().info('drive link healthy')
++            else:
++                self.get_logger().warn(f'drive link unhealthy: {reason}')
++            self._last_published = link_ok
++            self._last_reason = reason
++
++
++def main(args=None):
++    rclpy.init(args=args)
++    node = DriveLinkAdapter()
++    try:
++        rclpy.spin(node)
++    except KeyboardInterrupt:
++        pass
++    finally:
++        node.destroy_node()
++        if rclpy.ok():
++            rclpy.shutdown()
++
++
++if __name__ == '__main__':
++    main()
+diff -ruN orig/tools/static_check.py S2M-SBC-Integration/tools/static_check.py
+--- orig/tools/static_check.py	2026-08-16 15:46:01.092510203 +0000
++++ S2M-SBC-Integration/tools/static_check.py	2026-08-16 15:44:42.970607922 +0000
+@@ -75,9 +75,12 @@
+                 )
+ 
+     dependencies = (ROOT / 'dependencies.repos').read_text(encoding='utf-8')
++    urls = re.findall(r'^\s+url:\s+(\S+)\s*$', dependencies, re.MULTILINE)
+     pins = re.findall(r'^\s+version:\s+([0-9a-f]+)\s*$', dependencies, re.MULTILINE)
+-    if len(pins) != 2 or any(len(pin) != 40 for pin in pins):
+-        errors.append('dependencies.repos: expected two full 40-character commit pins')
++    if not pins or len(pins) != len(urls):
++        errors.append('dependencies.repos: every repository needs a commit pin')
++    if any(len(pin) != 40 for pin in pins):
++        errors.append('dependencies.repos: pins must be full 40-character commits')
+ 
+     if errors:
+         print('\n'.join(f'[FAIL] {error}' for error in errors))

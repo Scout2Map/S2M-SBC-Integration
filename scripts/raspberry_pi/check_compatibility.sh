@@ -89,7 +89,8 @@ else
 fi
 
 for package_name in rclpy nav2_bringup slam_toolbox robot_localization \
-  s2m_bringup s2m_description scout_gas scout2map_bridge scout2map_msgs; do
+  s2m_bringup s2m_description scout_gas scout2map_bridge scout2map_msgs \
+  scout2map_event; do
   check_ros_package "$package_name"
 done
 if [[ "$PROFILE" == sim ]]; then

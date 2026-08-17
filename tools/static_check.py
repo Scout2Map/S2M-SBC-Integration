@@ -75,9 +75,12 @@ def main():
                 )
 
     dependencies = (ROOT / 'dependencies.repos').read_text(encoding='utf-8')
+    urls = re.findall(r'^\s+url:\s+(\S+)\s*$', dependencies, re.MULTILINE)
     pins = re.findall(r'^\s+version:\s+([0-9a-f]+)\s*$', dependencies, re.MULTILINE)
-    if len(pins) != 2 or any(len(pin) != 40 for pin in pins):
-        errors.append('dependencies.repos: expected two full 40-character commit pins')
+    if not pins or len(pins) != len(urls):
+        errors.append('dependencies.repos: every repository needs a commit pin')
+    if any(len(pin) != 40 for pin in pins):
+        errors.append('dependencies.repos: pins must be full 40-character commits')
 
     if errors:
         print('\n'.join(f'[FAIL] {error}' for error in errors))
