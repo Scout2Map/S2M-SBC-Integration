@@ -3,17 +3,14 @@ set -uo pipefail
 
 ROS_DISTRO=jazzy
 PROFILE=onboard
-WITH_VISION=0
 WORKSPACE="${HOME}/scout2map_ws"
-VISION_VENV="${SCOUT2MAP_VISION_VENV:-${HOME}/scout2map_venvs/vision}"
 FAILURES=0
 WARNINGS=0
 
-usage() { printf 'Usage: %s [--profile onboard|sim] [--with-vision] [--workspace PATH]\n' "$0"; }
+usage() { printf 'Usage: %s [--profile onboard|sim] [--workspace PATH]\n' "$0"; }
 while (($#)); do
   case "$1" in
     --profile) [[ $# -ge 2 ]] || exit 2; PROFILE="$2"; shift 2 ;;
-    --with-vision) WITH_VISION=1; shift ;;
     --workspace) [[ $# -ge 2 ]] || exit 2; WORKSPACE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage; exit 2 ;;
@@ -98,36 +95,28 @@ if [[ "$PROFILE" == sim ]]; then
     check_ros_package "$package_name"
   done
 fi
-if ((WITH_VISION)); then
-  for package_name in vision_msgs image_transport camera_info_manager cv_bridge v4l2_camera; do
-    check_ros_package "$package_name"
-  done
-  if [[ -x "$VISION_VENV/bin/python" ]]; then
-    pass "vision virtual environment: $VISION_VENV"
-    "$VISION_VENV/bin/python" -c 'import cv2, numpy, onnxruntime' >/dev/null 2>&1 &&
-      pass "Vision OpenCV, NumPy and ONNX Runtime imports" ||
-      fail "vision environment cannot import cv2, numpy and onnxruntime"
-    PROVIDERS="$("$VISION_VENV/bin/python" -c \
-      'import onnxruntime as ort; print(",".join(ort.get_available_providers()))' 2>/dev/null)"
-    [[ "$PROVIDERS" == *CPUExecutionProvider* ]] &&
-      pass "ONNX Runtime provider: $PROVIDERS" ||
-      fail "ONNX Runtime CPUExecutionProvider is unavailable"
-  else
-    fail "vision virtual environment not found: $VISION_VENV"
-  fi
-fi
-python3 -c 'import numpy, yaml, serial' >/dev/null 2>&1 &&
-  pass "Python NumPy, YAML and serial imports" || fail "Python cannot import numpy, yaml and serial"
+python3 -c 'import yaml, serial' >/dev/null 2>&1 &&
+  pass "Python YAML and serial imports" || fail "Python cannot import yaml and serial"
 
 if compgen -G '/dev/ttyUSB*' >/dev/null || compgen -G '/dev/ttyACM*' >/dev/null; then
   pass "USB serial device detected"
 else
   warn "no USB serial device; connect RPLIDAR/MCU and rerun"
 fi
-compgen -G '/dev/i2c-*' >/dev/null && pass "I2C device node detected" ||
-  warn "no /dev/i2c-* node; enable I2C if BNO-055 connects directly"
-compgen -G '/dev/video*' >/dev/null && pass "camera device detected" ||
-  warn "no /dev/video* device; connect/enable the camera before vision testing"
+# Every I2C sensor sits behind an MCU, so the Pi needs no /dev/i2c-* node.
+# What matters is that the udev rules resolved to stable names.
+if [[ "$PROFILE" == onboard ]]; then
+  for device_path in /dev/scout2map_pico /dev/scout2map_drive /dev/scout2map_lidar; do
+    if [[ -e "$device_path" ]]; then
+      pass "device symlink: $device_path -> $(readlink -f "$device_path")"
+    else
+      warn "missing device symlink: $device_path (check udev rules and replug)"
+    fi
+  done
+  id -nG "$USER" | tr ' ' '\n' | grep -qx dialout &&
+    pass "user is in the dialout group" ||
+    fail "user is not in the dialout group; serial ports will not open"
+fi
 
 if command -v vcgencmd >/dev/null 2>&1; then
   THROTTLED="$(vcgencmd get_throttled 2>/dev/null || true)"

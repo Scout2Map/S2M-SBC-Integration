@@ -1,0 +1,11 @@
+# Ubuntu 24.04 system utilities needed before the ROS repository is added
+locales
+software-properties-common
+curl
+ca-certificates
+gnupg
+git
+build-essential
+cmake
+python3-serial
+usbutils

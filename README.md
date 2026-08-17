@@ -98,6 +98,13 @@ source ~/scout2map_env.sh
 workspace와 overlay가 준비된 개발 환경에서만 사용하며, 신규 설치의 첫 실행에는
 사용하지 않습니다.
 
+라즈베리파이 5에서 빌드 중 스왑이 발생하면 `--parallel-workers 2`로 병렬도를
+낮춥니다. `onboard` 프로파일은 udev 규칙을 함께 설치하며, 설치 후 재부팅해야
+`dialout` 그룹이 적용됩니다.
+
+설치 옵션과 패키지 목록의 자세한 설명은
+[라즈베리파이 5 설치](scripts/raspberry_pi/README.md)를 참고하십시오.
+
 ### 수동 개발 빌드
 
 설치 스크립트 없이 기존 Jazzy 환경에서 빌드할 때는 다음 순서를 사용합니다.
@@ -116,9 +123,38 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-현재 통합 launch는 Gazebo 시뮬레이션용입니다. 실차에서는 LiDAR, Pico bridge,
-wheel odometry, IMU/EKF와 Nav2를 순서대로 구성해야 하며 이를 한 번에 시작하는 onboard
-launch는 아직 제공하지 않습니다.
+### 실차 실행
+
+URDF, MCU 브리지, LiDAR, SLAM을 한 번에 시작하는 launch를 제공합니다.
+
+```bash
+ros2 launch s2m_bringup s2m_slam_real.launch.py
+```
+
+계층은 다음 순서로 올라가며, 각 계층은 앞 계층이 발행하는 TF에 의존합니다.
+
+1. `robot_state_publisher` — `base_link -> lidar_link`, `imu_link`, 바퀴 링크
+2. `s2m_onboard_bridge` — `odom -> base_link`, `sensor_fusion`, `range_link`
+3. `sllidar_ros2` — `lidar_link` 기준 `/scan`
+4. `slam_toolbox` — `map -> odom`
+5. Nav2 — 위 전부를 소비
+
+Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 확인한 뒤
+`use_nav2:=true`로 다시 실행합니다.
+
+| launch 인자 | 기본값 | 설명 |
+|---|---|---|
+| `use_bridges` | `true` | MCU 브리지 실행 |
+| `use_lidar` | `true` | RPLiDAR C1 드라이버 실행 |
+| `use_slam` | `true` | slam_toolbox 실행 |
+| `use_nav2` | `false` | Nav2 실행 |
+| `use_rviz` | `false` | RViz 실행 |
+| `lidar_port` | `/dev/scout2map_lidar` | udev 규칙 미설치 시 `/dev/ttyUSB0` |
+| `lidar_frame` | `lidar_link` | URDF 링크 이름과 반드시 일치해야 함 |
+| `slam_params` | `config/slam_toolbox_real.yaml` | 실차 전용 파라미터 |
+
+실차 EKF(`robot_localization`)와 저장 지도 기반 AMCL bringup은 아직 제공하지
+않습니다.
 
 ## 시뮬레이션 실행
 
