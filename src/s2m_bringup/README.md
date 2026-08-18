@@ -94,6 +94,31 @@ Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
 `batt_critical`은 기본적으로 복귀를 막지 않습니다. 파라미터는
 `config/drive_link_adapter.yaml`에 있습니다.
 
+## 실차 자동 복귀 mission
+
+```bash
+ros2 launch s2m_bringup s2m_return_home_real.launch.py \
+  map_id:=mapping_20260818
+```
+
+이 launch는 실차 SLAM/Nav2, Event Engine, return_home과 안전 게이트를 함께 시작합니다.
+Nav2 출력은 `/return_home/cmd_vel_input`으로 remap되며 `cmd_vel_safety_gate`만 최종
+`/cmd_vel`을 발행합니다. 실차 설정은 `auto_capture_start`와 `auto_arm`이 모두
+`false`이므로 정상 heartbeat, `/drive/link_ok`, `map -> base_link`를 확인한 뒤 다음
+서비스를 호출합니다.
+
+```bash
+ros2 service call /return_home/capture_start std_srvs/srv/Trigger "{}"
+ros2 service call /return_home/arm std_srvs/srv/SetBool "{data: true}"
+```
+
+teleop도 직접 `/cmd_vel`을 발행하지 않고 게이트 입력으로 remap합니다.
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -r cmd_vel:=/return_home/cmd_vel_input
+```
+
 ## 예상 데이터 흐름
 
 ```text
@@ -101,6 +126,10 @@ Gazebo diff drive -> /odom -> odom -> base_link
 Gazebo lidar      -> /scan -> SLAM Toolbox -> map -> odom
 Nav2              -> /return_home/cmd_vel_input
 return_home gate  -> /cmd_vel -> Gazebo diff drive
+
+Real drive bridge -> /drive/odom -> /odom -> odom -> base_link
+Real Nav2/teleop   -> /return_home/cmd_vel_input
+return_home gate  -> /cmd_vel -> STM32 drive bridge
 ```
 
 필수 확인 토픽:
@@ -120,5 +149,7 @@ ros2 run tf2_ros tf2_echo map base_link
   않았습니다.
 - 저장 지도 localization/AMCL과 실차 센서·EKF를 한 번에 시작하는 launch는 별도로
   구성해야 합니다.
+- `DriveStatus.link_ok`는 telemetry freshness를 나타내며 CRC 오류율과 PING/PONG 왕복
+  성공까지 종합한 품질 지표는 아닙니다.
 - `s2m_onboard_bridge.launch.py`의 static TF 오프셋은 측정값이 아닙니다. 이벤트
   마커 좌표를 신뢰하기 전에 실측값으로 교체해야 합니다.

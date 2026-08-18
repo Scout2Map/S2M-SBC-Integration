@@ -18,6 +18,7 @@ FORBIDDEN_RUNTIME_TEXT = (
     'nav2_minimal_tb3_sim',
     'scout_sim_bringup',
 )
+REMOVED_INSTALL_OPTIONS = ('--with-rplidar', '--with-vision')
 
 
 def repository_files(pattern):
@@ -42,6 +43,10 @@ def main():
         except ET.ParseError as exc:
             errors.append(f'{path.relative_to(ROOT)}: XML parse: {exc}')
 
+    for path in repository_files('*-package.xml'):
+        errors.append(
+            f'{path.relative_to(ROOT)}: duplicate package manifest filename')
+
     for suffix in ('*.yaml', '*.yml', '*.repos'):
         for path in repository_files(suffix):
             try:
@@ -65,6 +70,10 @@ def main():
 
     for path in repository_files('*.md'):
         text = path.read_text(encoding='utf-8')
+        for option in REMOVED_INSTALL_OPTIONS:
+            if option in text:
+                errors.append(
+                    f'{path.relative_to(ROOT)}: removed install option: {option}')
         for target in re.findall(r'\[[^]]+\]\(([^)]+)\)', text):
             if target.startswith(('http://', 'https://', '#')):
                 continue

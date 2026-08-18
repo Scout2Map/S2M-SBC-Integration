@@ -91,7 +91,7 @@ check_topic() {
   local line
   local actual_type
   # `ros2 topic list -t` prints: /topic [pkg/msg/Type]
-  line="$(grep -m1 -F -- "$topic [" <<<"$TOPIC_SNAPSHOT")"
+  line="$(awk -v topic="$topic" '$1 == topic {print; exit}' <<<"$TOPIC_SNAPSHOT")"
   actual_type="${line#*[}"
   actual_type="${actual_type%]}"
   if [[ -z "$line" ]]; then

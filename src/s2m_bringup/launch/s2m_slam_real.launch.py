@@ -22,17 +22,18 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument, IncludeLaunchDescription, TimerAction)
+    DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     description_share = get_package_share_directory('s2m_description')
     bringup_share = get_package_share_directory('s2m_bringup')
+    event_share = get_package_share_directory('scout2map_event')
 
     xacro_file = os.path.join(
         description_share, 'urdf', 'scout2map.urdf.xacro')
@@ -40,6 +41,13 @@ def generate_launch_description():
         bringup_share, 'config', 'slam_toolbox_real.yaml')
     default_nav2_params = os.path.join(
         bringup_share, 'config', 'nav2_lowspec.yaml')
+    default_event_params = os.path.join(
+        event_share, 'config', 'event_engine.yaml')
+    default_lidar_port = (
+        '/dev/scout2map_lidar'
+        if os.path.exists('/dev/scout2map_lidar')
+        else '/dev/ttyUSB0'
+    )
 
     args = [
         # --- layer toggles ---
@@ -52,6 +60,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_nav2', default_value='false',
             description='Start Nav2. Confirm SLAM and TF first.'),
+        DeclareLaunchArgument(
+            'use_event_engine', default_value='false',
+            description='Start the threshold event engine.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
 
         # Wheel joints are continuous, so without a joint state source
@@ -62,7 +73,7 @@ def generate_launch_description():
 
         # --- lidar ---
         DeclareLaunchArgument(
-            'lidar_port', default_value='/dev/scout2map_lidar',
+            'lidar_port', default_value=default_lidar_port,
             description='Falls back to /dev/ttyUSB0 if the udev rule is not '
                         'installed yet.'),
         DeclareLaunchArgument('lidar_baudrate', default_value='460800'),
@@ -75,10 +86,18 @@ def generate_launch_description():
         # --- params ---
         DeclareLaunchArgument('slam_params', default_value=default_slam_params),
         DeclareLaunchArgument('nav2_params', default_value=default_nav2_params),
+        DeclareLaunchArgument('event_params', default_value=default_event_params),
+        DeclareLaunchArgument(
+            'map_id', default_value='',
+            description='Mapping-session identifier included in event JSON.'),
+        DeclareLaunchArgument(
+            'nav_cmd_vel_topic', default_value='/cmd_vel',
+            description='Destination for Nav2 velocity output.'),
 
         # Seconds to wait before starting SLAM and Nav2. The bridges need to
         # open their serial ports and the LiDAR needs to spin up first.
         DeclareLaunchArgument('slam_start_delay', default_value='5.0'),
+        DeclareLaunchArgument('event_start_delay', default_value='6.0'),
         DeclareLaunchArgument('nav2_start_delay', default_value='10.0'),
     ]
 
@@ -152,19 +171,40 @@ def generate_launch_description():
 
     nav2 = TimerAction(
         period=LaunchConfiguration('nav2_start_delay'),
-        actions=[IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(
-                    get_package_share_directory('nav2_bringup'),
-                    'launch', 'navigation_launch.py')
+        actions=[GroupAction(actions=[
+            SetRemap(
+                src='/cmd_vel',
+                dst=LaunchConfiguration('nav_cmd_vel_topic')),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory('nav2_bringup'),
+                        'launch', 'navigation_launch.py')
+                ),
+                launch_arguments={
+                    'use_sim_time': 'false',
+                    'params_file': LaunchConfiguration('nav2_params'),
+                    'autostart': 'true',
+                }.items(),
             ),
-            launch_arguments={
-                'use_sim_time': 'false',
-                'params_file': LaunchConfiguration('nav2_params'),
-                'autostart': 'true',
-            }.items(),
-        )],
+        ])],
         condition=IfCondition(LaunchConfiguration('use_nav2')),
+    )
+
+    event_engine = TimerAction(
+        period=LaunchConfiguration('event_start_delay'),
+        actions=[Node(
+            package='scout2map_event',
+            executable='event_engine',
+            name='event_engine',
+            output='screen',
+            emulate_tty=True,
+            parameters=[
+                LaunchConfiguration('event_params'),
+                {'map_id': LaunchConfiguration('map_id')},
+            ],
+        )],
+        condition=IfCondition(LaunchConfiguration('use_event_engine')),
     )
 
     rviz = Node(
@@ -182,6 +222,7 @@ def generate_launch_description():
         bridges,
         lidar,
         slam,
+        event_engine,
         nav2,
         rviz,
     ])

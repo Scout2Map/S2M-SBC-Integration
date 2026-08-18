@@ -196,6 +196,17 @@ if ((BUILD_WORKSPACE)); then
   # Pulls the hardware description, the MCU bridge, the event engine and the
   # LiDAR driver at their pinned commits.
   log "Importing pinned dependencies"
+  BRIDGE_CHECKOUT="$WORKSPACE/src/s2m_mcu_bridge_node"
+  if [[ -d "$BRIDGE_CHECKOUT/.git" ]]; then
+    BRIDGE_REMOTE="$(git -C "$BRIDGE_CHECKOUT" remote get-url origin 2>/dev/null || true)"
+    case "$BRIDGE_REMOTE" in
+      *S2M-MCU_Bridge_Node.git*)
+        note "migrating renamed MCU bridge remote"
+        git -C "$BRIDGE_CHECKOUT" remote set-url origin \
+          https://github.com/Scout2Map/S2M-MCU-BridgeNode.git
+        ;;
+    esac
+  fi
   vcs import "$WORKSPACE/src" < "$REPO_DIR/dependencies.repos"
 
   [[ -d "$WORKSPACE/src/sllidar_ros2" ]] ||

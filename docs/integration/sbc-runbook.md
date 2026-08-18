@@ -22,11 +22,11 @@ Raspberry Pi 5 실기기:
 
     chmod +x scripts/raspberry_pi/*.sh
     ./scripts/raspberry_pi/install.sh \
-      --profile onboard \
-      --with-rplidar
+      --profile onboard
 
-AI 비전 런타임도 필요하면 --with-vision을 추가한다. 신규 설치의 첫 실행에는
---no-build를 사용하지 않는다.
+RPLIDAR 패키지는 onboard profile에 포함된다. AI 비전 런타임은 설치 후
+`scripts/raspberry_pi/create_vision_venv.sh onnx`로 별도 구성한다. 신규 설치의
+첫 실행에는 --no-build를 사용하지 않는다.
 
 매 터미널에서 환경을 불러온다.
 
@@ -59,6 +59,7 @@ dependencies.repos는 재현 가능한 통합 기준점을 고정한다. 의존 
 | 가스 위험 지도 | ros2 launch scout_gas sim_with_gas.launch.py | gas와 marker |
 | 센서 가상 입력 | ros2 launch scout2map_bridge fake_sensors.launch.py | 센서 토픽 주기 |
 | MCU 실입력 | ros2 launch s2m_bringup s2m_onboard_bridge.launch.py | 프레임 파싱, 토픽, static TF |
+| 실차 안전 mission | ros2 launch s2m_bringup s2m_return_home_real.launch.py map_id:=mapping_YYYYMMDD | Event Engine, 단일 cmd_vel 게이트, 자동 복귀 |
 
 시뮬레이션의 상세 절차는 simulation-validation-guide.md를 따른다.
 
@@ -90,6 +91,17 @@ Slam Toolbox pose graph가 필요하면 serialize_map 서비스를 별도로 호
 sensors/status는 Pico 센서 브리지 상태이며 주행 제어 STM32의 링크 상태가 아니다.
 주행 링크 판정은 drive/status를 drive_link_adapter가 해석해 발행하는
 drive/link_ok를 사용한다. 두 토픽을 서로 대체해서는 안 된다.
+
+자동 복귀 mission에서 teleop를 사용할 때에는 안전 게이트 입력으로 remap한다.
+`/cmd_val`은 오타이며 실제 표준 토픽은 `/cmd_vel`이다.
+
+    ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+      -r cmd_vel:=/return_home/cmd_vel_input
+
+브리지 단독 바퀴 띄움 시험이 아닌데 `/cmd_vel` 발행자가 두 개 이상이면 시험을
+중단하고 발행 주체를 정리한다.
+
+    ros2 topic info /cmd_vel --verbose
 
 토픽과 프레임의 전체 계약은 bridge-interface-contract.md를 따른다.
 

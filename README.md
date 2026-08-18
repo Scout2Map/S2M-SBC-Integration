@@ -26,7 +26,7 @@ S2M-SBC-Integration/
 │   ├── bridge-interface-contract.md  # MCU 브리지 토픽·프레임 계약
 │   ├── implementation-status.md   # 구현·검증 상태
 │   ├── map-marker-coordinate-design.md
-│   ├── repository-baseline-2026-08-13.md
+│   ├── repository-baseline-2026-08-18.md
 │   ├── real-hardware-validation.md
 │   ├── return-home-simulation-plan.md
 │   ├── sbc-runbook.md
@@ -45,6 +45,7 @@ S2M-SBC-Integration/
 │   ├── s2m_bringup/               # Gazebo + SLAM Toolbox + Nav2
 │   └── scout_gas/                 # 가스 센서·위험 지도 시뮬레이션
 ├── dependencies.repos             # 빌드에 필요한 ROS 소스 목록
+├── RELEASE_NOTES.md               # 통합 버전별 변경과 검증 범위
 ├── LICENSE                        # Apache-2.0
 └── tools/static_check.py
 ```
@@ -74,12 +75,12 @@ chmod +x scripts/raspberry_pi/*.sh
 
 ```bash
 ./scripts/raspberry_pi/install.sh \
-  --profile onboard \
-  --with-rplidar
+  --profile onboard
 sudo reboot
 ```
 
-카메라와 ONNX Runtime CPU 환경도 필요하면 `--with-vision`을 추가합니다.
+RPLIDAR 패키지는 onboard profile에 포함됩니다. 카메라와 ONNX Runtime Python 환경은
+기본 설치 후 `scripts/raspberry_pi/create_vision_venv.sh onnx`로 별도 구성합니다.
 
 ### Gazebo 개발 환경
 
@@ -148,10 +149,39 @@ Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 �
 | `use_lidar` | `true` | RPLiDAR C1 드라이버 실행 |
 | `use_slam` | `true` | slam_toolbox 실행 |
 | `use_nav2` | `false` | Nav2 실행 |
+| `use_event_engine` | `false` | `/events` 이벤트 엔진 실행 |
 | `use_rviz` | `false` | RViz 실행 |
 | `lidar_port` | `/dev/scout2map_lidar` | udev 규칙 미설치 시 `/dev/ttyUSB0` |
 | `lidar_frame` | `lidar_link` | URDF 링크 이름과 반드시 일치해야 함 |
 | `slam_params` | `config/slam_toolbox_real.yaml` | 실차 전용 파라미터 |
+
+### 실차 자동 복귀와 안전 게이트
+
+실차 mission에서는 Nav2나 teleop가 주행 브리지의 `/cmd_vel`을 직접 발행하지 않도록
+다음 launch를 사용합니다. 시작 시 게이트는 차단 상태이며, 정상 heartbeat, 주행 링크,
+TF를 확인한 뒤 출발점을 저장하고 명시적으로 무장해야 합니다.
+
+```bash
+ros2 launch s2m_bringup s2m_return_home_real.launch.py \
+  map_id:=mapping_20260818 use_rviz:=true
+```
+
+```bash
+ros2 service call /return_home/capture_start std_srvs/srv/Trigger "{}"
+ros2 service call /return_home/arm std_srvs/srv/SetBool "{data: true}"
+ros2 topic echo /return_home/status
+```
+
+teleop도 안전 게이트 입력으로 remap합니다. 정확한 표준 토픽 이름은 `/cmd_vel`이며
+`/cmd_val`은 존재하지 않습니다.
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+  -r cmd_vel:=/return_home/cmd_vel_input
+```
+
+브리지 단독 바퀴 띄움 시험에서는 `/cmd_vel` 직접 발행을 사용할 수 있지만, 자동 복귀
+mission에서는 직접 발행하면 게이트를 우회하므로 금지합니다.
 
 실차 EKF(`robot_localization`)와 저장 지도 기반 AMCL bringup은 아직 제공하지
 않습니다.
@@ -294,6 +324,14 @@ ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
 정리되어 있습니다. 주행 링크가 끊긴 상태에서 자동 복귀를 시도하지 말고 watchdog
 안전 정지를 우선해야 합니다.
 
+최신 브리지는 `skid_factor` 보정을 요구합니다. 실차 바닥에서 양방향 제자리 회전 후
+다음 명령으로 값을 측정하고 `drive_bridge.yaml`에 반영하기 전에는 Event Engine의
+`enable_drive_events`를 `false`로 유지합니다.
+
+```bash
+ros2 run scout2map_bridge skid_calib
+```
+
 static TF의 기본 오프셋은 측정값이 아닙니다. 실차에서 측정한 뒤 launch 인자로
 교체하거나 `s2m_description` xacro에 링크를 추가하십시오.
 
@@ -305,8 +343,8 @@ static TF의 기본 오프셋은 측정값이 아닙니다. 실차에서 측정�
   --workspace ~/scout2map_ws
 ```
 
-비전 옵션을 설치했다면 `--with-vision`, Gazebo 환경이면 `--profile sim`을 사용합니다.
-센서가 연결되지 않은 상태의 `/dev/tty*`, `/dev/video*`, `/dev/i2c-*` 경고는 정상일 수
+Gazebo 환경이면 `--profile sim`을 사용합니다. 센서가 연결되지 않은 상태의
+`/dev/tty*`, `/dev/video*`, `/dev/i2c-*` 경고는 정상일 수
 있지만 ROS 패키지나 workspace overlay의 `FAIL`은 해결해야 합니다.
 
 ## 개발 검사
@@ -329,6 +367,8 @@ bash -n scripts/raspberry_pi/*.sh
   관련 센서의 `age_s` 또는 센서별 timestamp를 사용해야 합니다.
 - 관제망 단절과 SBC-주행 MCU 링크 단절을 구분하십시오. 전자는 조건부 복귀가 가능하지만
   후자는 즉시 안전 정지 대상입니다.
+- `/drive/link_ok`는 현재 MCU telemetry freshness와 fault 상태를 나타냅니다. CRC 오류율과
+  PING/PONG 왕복 상태까지 반영하는 완전한 링크 품질 지표는 아직 아닙니다.
 - 실차 첫 시험은 바퀴를 띄우고 물리 비상정지와 전류 제한 전원을 준비한 상태에서
   수행하십시오.
 - 시뮬레이션 launch와 `s2m_onboard_bridge.launch.py`를 동시에 실행하지 마십시오.
@@ -337,3 +377,4 @@ bash -n scripts/raspberry_pi/*.sh
   `odom -> base_link` 발행 주체를 하나로 유지하십시오.
 
 구현 상태와 실차 검증 순서는 [통합 문서](docs/integration/README.md)에 정리되어 있습니다.
+이번 통합 변경은 [릴리스 노트](RELEASE_NOTES.md)에서 확인할 수 있습니다.

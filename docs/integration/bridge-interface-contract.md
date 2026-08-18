@@ -91,6 +91,25 @@ remap은 `s2m_bringup/launch/s2m_onboard_bridge.launch.py`에서 수행한다. �
 `batt_critical`은 기본적으로 복귀를 막지 않는다. 전력이 부족한 상태로 제자리에
 멈추는 것보다 출발점까지 돌아오는 편이 낫기 때문이다.
 
+현재 `DriveStatus.link_ok`는 시리얼 포트가 열려 있고 최근 유효 telemetry frame이
+`link_timeout_s` 이내에 수신됐는지를 뜻한다. CRC 오류 수와 PING/PONG 왕복 성공은
+상태 판정에 아직 포함되지 않는다. 따라서 문서에서 이를 완전한 왕복 통신 품질로
+표현하면 안 된다.
+
+### skid 보정과 슬립 신호
+
+최신 브리지는 `skid_factor`, `yaw_rate_encoder_radps`, `yaw_rate_imu_radps`,
+`slip_ratio`, `slip_signal_valid`를 제공한다. `skid_factor` 기본값 `1.0`은 미측정 상태다.
+
+```bash
+ros2 run scout2map_bridge skid_calib
+```
+
+실차 바닥에서 teleop로 양방향 제자리 회전을 20~30초 수행하고 출력된 값을
+`drive_bridge.yaml`에 반영한다. 이 보정 전에는 Event Engine의
+`enable_drive_events: false`를 유지한다. 이 계수는 슬립 판정 신호 보정용이며 현재
+펌웨어의 속도 명령 변환이나 `/drive/odom` 적분에는 적용되지 않는다.
+
 ## 4. TF 프레임
 
 | 프레임 | 정의 위치 | 상태 |
@@ -128,6 +147,10 @@ ros2 launch s2m_bringup s2m_onboard_bridge.launch.py \
 
 시뮬레이션과 실차 브리지를 동시에 실행하지 않는다. `/odom`, `/imu/data`, `/cmd_vel`,
 `odom -> base_link`가 모두 충돌한다.
+
+실차 자동 복귀 mission에서는 `s2m_return_home_real.launch.py`를 사용한다. Nav2 출력과
+teleop 출력을 `/return_home/cmd_vel_input`으로 보내고 `cmd_vel_safety_gate` 하나만 최종
+`/cmd_vel`을 발행해야 한다. `/cmd_vel` 직접 teleop는 브리지 단독 벤치 시험에만 쓴다.
 
 ## 6. 이벤트 엔진 소비 계약
 

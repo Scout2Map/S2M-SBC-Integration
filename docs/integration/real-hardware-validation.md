@@ -46,9 +46,10 @@ encoder counts 값을 보정한다.
 | 센서 브리지 상태 | /sensors/status | Pico 상태 전용 |
 | 관제 heartbeat | /control/heartbeat | SBC 단절 판정 |
 
-sensors/status를 주행 링크 상태로 재사용하면 안 된다. 주행 브리지는 수신 시각,
-CRC 오류, 응답 timeout을 종합해 DriveStatus.link_ok를 발행하고, drive_link_adapter가
-estop, stall, cmd timeout, batt_dead를 함께 반영해 drive/link_ok로 축약한다.
+sensors/status를 주행 링크 상태로 재사용하면 안 된다. 현재 주행 브리지의
+DriveStatus.link_ok는 포트가 열려 있고 telemetry가 timeout 이내에 수신됐는지를 뜻한다.
+CRC 오류율과 PING/PONG 왕복 성공은 아직 판정에 포함되지 않는다. drive_link_adapter는
+여기에 estop, stall, cmd timeout, batt_dead를 반영해 drive/link_ok로 축약한다.
 
 robot_localization을 도입하기 전까지 /odom은 휠 오도메트리이다. EKF를 추가하면
 drive_bridge의 publish_tf를 false로 바꾸고 remap을 /drive/odom으로 되돌린다.
@@ -75,6 +76,8 @@ SLAM 단계에서는 map to odom을 slam_toolbox가, odom to base_link를 오도
 3. 지도를 저장하고 AMCL 위치 추정에서 초기 자세와 재지역화를 확인한다.
 4. Nav2 목표 수행 시 장애물 정지, 경로 재계획, 제동 거리를 기록한다.
 5. 저마찰 바닥에서 휠 오도메트리와 IMU yaw 차이를 비교해 슬립 기준을 정한다.
+6. `ros2 run scout2map_bridge skid_calib`으로 skid_factor를 측정한 뒤 주행 이벤트를
+   활성화한다.
 
 STM32 구동 브리지는 scout2map_bridge의 drive_bridge로 제공되며 토픽 remap과 TF
 소유권은 s2m_onboard_bridge.launch.py에서 확정했다. 실차 EKF와 AMCL 기반 onboard
@@ -84,10 +87,16 @@ bringup은 아직 없으므로 이 두 계층을 구현해야 실차 SLAM/Nav2 �
 
 실차 자동 복귀는 다음 항목이 모두 완료된 후 활성화한다.
 
-- SBC에서 STM32로 가는 단일 최종 cmd_vel 게이트가 있다.
-- drive/link_ok가 실제 왕복 통신 상태를 반영한다. drive_link_adapter를 실행하고
+- `s2m_return_home_real.launch.py`에서 STM32로 가는 단일 최종 cmd_vel 게이트를 사용한다.
+- drive/link_ok가 telemetry 단절과 주행 fault를 반영한다. drive_link_adapter를 실행하고
   USB 케이블을 물리적으로 분리해 1초 안에 false로 바뀌는지 확인한다.
 - 저장 지도와 AMCL에서 시작 좌표를 안정적으로 복원한다.
 - 출발점까지 경로가 없거나 진행이 멈추면 제한 시간 안에 정지한다.
 - 관제망 단절과 SBC 자체 장애를 구분한다.
 - 물리 비상 정지와 MCU watchdog이 자동 복귀보다 높은 우선순위를 갖는다.
+
+teleop 검증에서 표준 토픽은 `/cmd_vel`이다. 브리지 단독 시험에서는 직접 발행할 수
+있지만 자동 복귀 mission에서는 다음 remap으로 안전 게이트를 통과시킨다.
+
+    ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
+      -r cmd_vel:=/return_home/cmd_vel_input
