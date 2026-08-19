@@ -2,6 +2,7 @@
 """Return to a captured start pose when the control-network heartbeat is lost."""
 
 import json
+import math
 import time
 from copy import deepcopy
 
@@ -48,6 +49,8 @@ class ReturnHomeNode(Node):
         self.declare_parameter('auto_capture_start', True)
         self.declare_parameter('auto_capture_delay_sec', 5.0)
         self.declare_parameter('auto_arm', True)
+        self.declare_parameter('capture_pose_offset_x', 0.0)
+        self.declare_parameter('capture_pose_offset_y', 0.0)
         self.declare_parameter('control_rate_hz', 10.0)
 
         gp = self.get_parameter
@@ -62,6 +65,8 @@ class ReturnHomeNode(Node):
         self._auto_capture = bool(gp('auto_capture_start').value)
         self._auto_capture_delay = float(gp('auto_capture_delay_sec').value)
         self._auto_arm = bool(gp('auto_arm').value)
+        self._capture_offset_x = float(gp('capture_pose_offset_x').value)
+        self._capture_offset_y = float(gp('capture_pose_offset_y').value)
 
         self._state = 'WAITING_FOR_START'
         self._armed = False
@@ -72,6 +77,7 @@ class ReturnHomeNode(Node):
         self._drive_link_ok = False
         self._last_drive_status_mono = None
         self._goal_handle = None
+        self._goal_pose = None
         self._return_reason = ''
         self._node_started_mono = time.monotonic()
         self._return_started_mono = None
@@ -194,6 +200,12 @@ class ReturnHomeNode(Node):
         if pose is None:
             return False, 'map to base_link TF is unavailable or stale'
 
+        # A freshly-created SLAM map can put the first pose exactly on its
+        # lower map boundary.  Keep the requested return waypoint inside the
+        # Nav2 costmap while remaining within the configured goal tolerance.
+        pose.pose.position.x += self._capture_offset_x
+        pose.pose.position.y += self._capture_offset_y
+
         self._start_pose = pose
         self._start_pose_pub.publish(deepcopy(pose))
         self._set_state('START_POSE_CAPTURED')
@@ -304,6 +316,11 @@ class ReturnHomeNode(Node):
             self._safe_stop(reason)
 
         if self._state == 'RETURNING':
+            # Some Nav2 controller plugins report distance_remaining as zero
+            # while still executing a valid path.  Use the authoritative map
+            # -> base_link TF to detect real progress instead of treating that
+            # feedback value as a stalled return.
+            self._update_return_progress()
             if now_mono - self._return_started_mono > self._return_timeout:
                 self._safe_stop('return-home deadline exceeded')
             elif (
@@ -335,6 +352,7 @@ class ReturnHomeNode(Node):
         goal = NavigateToPose.Goal()
         goal.pose = deepcopy(self._start_pose)
         goal.pose.header.stamp = self.get_clock().now().to_msg()
+        self._goal_pose = deepcopy(goal.pose)
         self._return_reason = reason
         self._return_started_mono = time.monotonic()
         self._last_progress_mono = self._return_started_mono
@@ -348,6 +366,24 @@ class ReturnHomeNode(Node):
 
     def _goal_feedback(self, message):
         distance = float(message.feedback.distance_remaining)
+        if distance <= 0.0:
+            return
+        if (
+            self._best_distance is None
+            or distance <= self._best_distance - self._progress_min_delta
+        ):
+            self._best_distance = distance
+            self._last_progress_mono = time.monotonic()
+
+    def _update_return_progress(self):
+        if self._goal_pose is None:
+            return
+        pose = self._lookup_pose()
+        if pose is None:
+            return
+        dx = pose.pose.position.x - self._goal_pose.pose.position.x
+        dy = pose.pose.position.y - self._goal_pose.pose.position.y
+        distance = math.hypot(dx, dy)
         if (
             self._best_distance is None
             or distance <= self._best_distance - self._progress_min_delta
