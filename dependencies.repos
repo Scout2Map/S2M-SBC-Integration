@@ -2,15 +2,15 @@ repositories:
   s2m_hardware:
     type: git
     url: https://github.com/Scout2Map/S2M-Hardware.git
-    version: c3d55f3a65e27e1d6169f6964840b9c8334b1229
+    version: 53fcc7a7b9f0d6cbfd7631247572be78bafd6006
   s2m_mcu_bridge_node:
     type: git
     url: https://github.com/Scout2Map/S2M-MCU-BridgeNode.git
-    version: 95ad1d9c2f4e529178031888c696eaba0a282f84
+    version: bc0889a07b603bd3c72bb4a3195a6e645e68cf7d
   s2m_event_engine:
     type: git
     url: https://github.com/Scout2Map/S2M-Event-Engine.git
-    version: 27beec074fdc74c57491af59df8f3a5d79964fb6
+    version: 895bca722183ee49563fd5c954236297b16bc0ca
   sllidar_ros2:
     type: git
     url: https://github.com/Slamtec/sllidar_ros2.git
