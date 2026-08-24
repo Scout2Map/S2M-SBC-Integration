@@ -33,8 +33,10 @@
 ekf_filter_node:
   ros__parameters:
 
-    # Telemetry arrives at 50Hz; 30Hz output is comfortably above Nav2's need
-    frequency: 30.0
+    # Telemetry arrives at 50Hz and controller_frequency is 6Hz, so 20Hz is
+    # ample. 30Hz overran its own period on this SBC whenever Nav2 was
+    # starting up, which the filter reports at ERROR level.
+    frequency: 20.0
 
     # Drop a sensor from the update after this much silence
     sensor_timeout: 0.2

@@ -135,8 +135,11 @@ local_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
+        # Must stay comfortably above robot_radius. At 0.2 it equalled the
+        # inscribed radius, so the exponential decay band had zero width and
+        # nothing pushed the controller away from walls.
         cost_scaling_factor: 1.0
-        inflation_radius: 0.2
+        inflation_radius: 0.35
       always_send_full_costmap: True
       
 global_costmap:
@@ -171,8 +174,12 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        # NavFn is a shortest-path planner, so path shape comes from this
+        # gradient rather than from the controller. Lower cost_scaling_factor
+        # decays more slowly and therefore pushes the path further out; the
+        # old 3.0 over a 10cm band made wall-hugging the cheapest route.
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.40
       always_send_full_costmap: True
 
 # The mapping launch does not start map_server. When switching to localization,
