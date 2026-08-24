@@ -40,6 +40,7 @@
 | `S2M-MCU-BridgeNode` | `scout2map_bridge`, `scout2map_msgs` | Pico/STM32 USB CDC 브리지와 메시지 정의 |
 | `S2M-Event-Engine` | `scout2map_event` | 임계값 이벤트 판별과 지도 좌표 결합 |
 | `sllidar_ros2` | `sllidar_ros2` | RPLiDAR C1 드라이버 |
+| `m-explore-ros2` | `explore_lite`, `explore_lite_msgs`, `multirobot_map_merge`(미사용) | 프론티어 자율 탐색, `use_exploration:=true` |
 
 이 저장소 자체가 제공하는 패키지는 `s2m_bringup`과 `scout_gas`이며 워크스페이스에
 심볼릭 링크로 연결된다.
@@ -54,7 +55,9 @@
 | Gazebo (`onboard`) | 로봇에서 시뮬레이터를 실행하지 않는다 |
 
 `robot_localization`을 도입하면 `drive_bridge`의 `publish_tf`를 `false`로 바꾸어
-`odom -> base_link` 발행 주체를 하나로 유지해야 한다.
+`odom -> base_link` 발행 주체를 하나로 유지해야 한다. 이때 필요한 패키지 목록은
+`manifests/reference/ros-slam-future-ekf.txt`에 참고용으로 남아 있다 (install.sh는
+이 파일을 읽지 않는다).
 
 ## 완료 판정
 
@@ -64,6 +67,7 @@
 
 필수 항목은 Ubuntu 24.04, ROS 2 Jazzy, 워크스페이스 빌드 산출물, 그리고
 `s2m_bringup`, `s2m_description`, `scout_gas`, `scout2map_bridge`,
-`scout2map_msgs`, `scout2map_event`, `slam_toolbox`, `nav2_bringup`이다.
+`scout2map_msgs`, `scout2map_event`, `slam_toolbox`, `nav2_bringup`,
+`explore_lite`이다.
 
 `onboard`에서는 세 장치 심볼릭 링크와 `dialout` 그룹 소속도 함께 확인한다.

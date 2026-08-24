@@ -13,6 +13,7 @@ Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을 실행하기
 - Pico 센서와 STM32 주행 MCU의 USB CDC 장치, ROS 토픽, TF 프레임 점검
 - 주행 브리지 `DriveStatus`를 자동 복귀 정책의 `/drive/link_ok`로 변환
 - 임계값 이벤트 엔진(`scout2map_event`) 워크스페이스 통합
+- 프론티어 기반 자율 탐색(`explore_lite`, `use_exploration:=true`) 통합
 - RPLIDAR C1 드라이버 및 선택형 OpenCV/ONNX Runtime 설치
 - Python/XML/YAML/Markdown/셸 정적 검사 자동화
 
@@ -37,10 +38,9 @@ S2M-SBC-Integration/
 │   ├── install.sh                 # ROS 2와 워크스페이스 설치
 │   ├── check_compatibility.sh     # OS·패키지·장치 점검
 │   ├── check_mcu_interfaces.sh    # USB CDC와 ROS 토픽 점검
-│   ├── install_rplidar.sh
 │   ├── create_vision_venv.sh
 │   ├── udev/                      # 안정적인 USB CDC 장치명 설정
-│   └── manifests/                 # apt/pip 설치 목록
+│   └── manifests/                 # apt/pip 설치 목록 (install.sh가 읽는 목록만 존재)
 ├── src/
 │   ├── s2m_bringup/               # Gazebo + SLAM Toolbox + Nav2
 │   └── scout_gas/                 # 가스 센서·위험 지도 시뮬레이션

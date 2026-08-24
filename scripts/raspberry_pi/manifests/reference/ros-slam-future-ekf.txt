@@ -1,0 +1,25 @@
+# NOT READ BY install.sh -- reference only, not an active manifest.
+#
+# This is an older, wider list from before ros-onboard.txt was split out.
+# Most entries below are already covered by ros-onboard.txt today; the ones
+# that are not (robot-localization, imu-tools, diagnostic-updater,
+# laser-filters) are the packages PACKAGE_INVENTORY.md's "설치하지 않는 것"
+# table calls out as deliberately deferred until real-hardware EKF fusion is
+# introduced. Kept here so that list does not have to be reconstructed from
+# scratch later; fold the still-needed lines into ros-onboard.txt at that
+# point instead of reviving this file wholesale.
+ros-jazzy-ros-base
+ros-jazzy-navigation2
+ros-jazzy-nav2-bringup
+ros-jazzy-slam-toolbox
+ros-jazzy-robot-localization
+ros-jazzy-imu-tools
+ros-jazzy-diagnostic-updater
+ros-jazzy-tf2-tools
+ros-jazzy-robot-state-publisher
+ros-jazzy-joint-state-publisher
+ros-jazzy-xacro
+ros-jazzy-laser-filters
+ros-jazzy-rosbag2
+ros-jazzy-rosbag2-storage-mcap
+ros-jazzy-teleop-twist-keyboard

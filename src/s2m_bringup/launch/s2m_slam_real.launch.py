@@ -12,9 +12,13 @@ publishes:
   3. sllidar_ros2            /scan stamped in lidar_link
   4. slam_toolbox            map -> odom
   5. nav2                    consumes all of the above
+  6. explore_lite            optional; drives Nav2 from Nav2's own costmap
 
 Nav2 is off by default. Bring the stack up without it, confirm the map and TF
-tree are stable, then relaunch with use_nav2:=true.
+tree are stable, then relaunch with use_nav2:=true. Frontier exploration
+(use_exploration:=true) needs Nav2's global costmap already publishing, so
+enable use_nav2 too -- the launch file does not enforce that dependency for
+you, it only starts the node later than nav2_start_delay.
 """
 
 import os
@@ -43,6 +47,8 @@ def generate_launch_description():
         bringup_share, 'config', 'nav2_lowspec.yaml')
     default_event_params = os.path.join(
         event_share, 'config', 'event_engine.yaml')
+    default_explore_params = os.path.join(
+        bringup_share, 'config', 'explore_lite.yaml')
     default_lidar_port = (
         '/dev/scout2map_lidar'
         if os.path.exists('/dev/scout2map_lidar')
@@ -63,6 +69,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_event_engine', default_value='false',
             description='Start the threshold event engine.'),
+        DeclareLaunchArgument(
+            'use_exploration', default_value='false',
+            description='Start frontier exploration (explore_lite). '
+                        'Requires use_nav2:=true; see module docstring.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
 
         # Wheel joints are continuous, so without a joint state source
@@ -88,6 +98,8 @@ def generate_launch_description():
         DeclareLaunchArgument('nav2_params', default_value=default_nav2_params),
         DeclareLaunchArgument('event_params', default_value=default_event_params),
         DeclareLaunchArgument(
+            'explore_params', default_value=default_explore_params),
+        DeclareLaunchArgument(
             'map_id', default_value='',
             description='Mapping-session identifier included in event JSON.'),
         DeclareLaunchArgument(
@@ -99,6 +111,11 @@ def generate_launch_description():
         DeclareLaunchArgument('slam_start_delay', default_value='5.0'),
         DeclareLaunchArgument('event_start_delay', default_value='6.0'),
         DeclareLaunchArgument('nav2_start_delay', default_value='10.0'),
+        # Nav2's global costmap needs a few seconds after navigation_launch.py
+        # comes up before it has published anything explore_lite can read, so
+        # this is later than nav2_start_delay, not relative to it (launch
+        # arguments cannot be summed as substitutions here).
+        DeclareLaunchArgument('exploration_start_delay', default_value='16.0'),
     ]
 
     # xacro is expanded here so robot_description is a plain URDF string
@@ -207,6 +224,22 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_event_engine')),
     )
 
+    exploration = TimerAction(
+        period=LaunchConfiguration('exploration_start_delay'),
+        actions=[Node(
+            package='explore_lite',
+            executable='explore',
+            name='explore_node',
+            output='screen',
+            emulate_tty=True,
+            parameters=[
+                LaunchConfiguration('explore_params'),
+                {'use_sim_time': False},
+            ],
+        )],
+        condition=IfCondition(LaunchConfiguration('use_exploration')),
+    )
+
     rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -224,5 +257,6 @@ def generate_launch_description():
         slam,
         event_engine,
         nav2,
+        exploration,
         rviz,
     ])
