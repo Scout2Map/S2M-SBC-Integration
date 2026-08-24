@@ -2,6 +2,7 @@
 """Dependency-light static checks for the SBC integration repository."""
 
 import ast
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -12,6 +13,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = (ROOT / 'scripts', ROOT / 'src')
+IGNORED_PARTS = {
+    '.git', '.pytest_cache', '__pycache__', 'build', 'install', 'log', 'ws'}
 FORBIDDEN_RUNTIME_TEXT = (
     'base_footprint',
     'micro_ros_agent',
@@ -22,10 +25,16 @@ REMOVED_INSTALL_OPTIONS = ('--with-rplidar', '--with-vision')
 
 
 def repository_files(pattern):
-    return sorted(
-        path for path in ROOT.rglob(pattern)
-        if '.git' not in path.parts and '__pycache__' not in path.parts
-    )
+    matches = []
+    for directory, subdirectories, filenames in os.walk(ROOT):
+        subdirectories[:] = [
+            name for name in subdirectories if name not in IGNORED_PARTS]
+        matches.extend(
+            Path(directory) / name
+            for name in filenames
+            if Path(name).match(pattern)
+        )
+    return sorted(matches)
 
 
 def main():
@@ -56,7 +65,7 @@ def main():
 
     for source_root in SOURCE_ROOTS:
         for path in source_root.rglob('*'):
-            if not path.is_file() or '__pycache__' in path.parts:
+            if not path.is_file() or IGNORED_PARTS.intersection(path.parts):
                 continue
             try:
                 text = path.read_text(encoding='utf-8')
