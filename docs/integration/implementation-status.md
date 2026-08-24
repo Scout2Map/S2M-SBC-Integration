@@ -11,6 +11,7 @@
 | 자동 복귀 시뮬레이션 | Nav2 시작점 goal, fault injector, steady-clock watchdog, 단일 cmd_vel 안전 게이트 | `src/s2m_bringup` |
 | 실차 안전 mission | Nav2/teleop 게이트 입력, drive link adapter, Event Engine, 수동 무장형 return_home launch | `s2m_return_home_real.launch.py` |
 | 가스 위험 지도 | 선택성 센서, 가우시안 농도장, 육각 지도, 이벤트·map 저장 | `src/scout_gas` |
+| AI Vision 프로토타입 | USB 카메라, YOLOv8 ONNX 추론, 표준 검출·진단, Event Engine 입력 | `src/scout_vision` |
 | 자동 검사 | Python/XML/YAML/Markdown/셸 구문 검사 | `tools/static_check.py`, `.github/workflows` |
 
 ## 2026-08-13 실행 검증 완료
@@ -36,6 +37,7 @@
 | 지도 이벤트 좌표 | UGV 또는 rosbag | 센서 timestamp 기반 TF 조회와 위치 오차 측정 |
 | 자동 복귀 실차 | UGV | 관제망 단절 시 출발점 도착, MCU 링크·TF 단절 시 안전 정지 |
 | Event Engine 실차 | UGV + rosbag | `/events` 좌표, 8종 debounce, map_id와 threshold 변경 확인 |
+| AI Vision 실차 | Pi 5 + COMS AU142 + 확정 모델 | 정확도, FPS, p50/p95 지연, 전력·온도와 SLAM/Nav2 영향 기록 |
 | 추가 고장 주입 | Gazebo | TF 단절, 무진행, 제한 시간 초과에서 SAFE_STOP 확인 |
 
 ## 안전 동작 원칙
