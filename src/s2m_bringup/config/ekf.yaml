@@ -1,0 +1,147 @@
+# File   : ekf.yaml
+# Purpose: robot_localization EKF for the odom -> base_link estimate.
+#          Fuses wheel body velocity with BNO055 heading and yaw rate.
+#
+# Why this particular split of inputs, in short:
+#
+#   /drive/odom carries a pose whose x/y come from the MCU integrating its own
+#   encoder heading, while its orientation is overwritten with the IMU
+#   quaternion by _resolve_orientation() in the bridge. Two different heading
+#   sources inside one message. Fusing that pose would mix them and would also
+#   feed the IMU yaw into the filter twice, once through odom0 and once through
+#   imu0, which makes the filter far more confident about heading than the
+#   hardware justifies.
+#
+#   So the odometry contributes only vx. Body-frame forward velocity is
+#   heading-independent, it is a direct wheel-speed measurement rather than an
+#   integration, and it is the one quantity the encoders genuinely do well.
+#   The EKF then integrates vx along the IMU heading itself, which is exactly
+#   the fix the 2026-08-24 checkpoint wanted and could not get by patching the
+#   bridge integration.
+#
+#   vyaw from the wheels is deliberately not fused. The geometric track width
+#   in _publish_odom overestimates yaw rate by roughly the measured
+#   skid_factor of 1.41, so that channel is known-biased; the gyro is better in
+#   every respect.
+#
+#   Linear acceleration is not fused either. It is a consumer-grade MEMS accel
+#   whose bias would be integrated twice, and the bridge currently applies the
+#   quaternion yaw offset to it a second time on top of the chip's own axis
+#   remap, so its horizontal components are sign-flipped. Leaving accel out
+#   keeps that latent bug out of the state estimate.
+
+ekf_filter_node:
+  ros__parameters:
+
+    # Telemetry arrives at 50Hz; 30Hz output is comfortably above Nav2's need
+    frequency: 30.0
+
+    # Drop a sensor from the update after this much silence
+    sensor_timeout: 0.2
+
+    # Planar chassis: z, roll, pitch and their rates are held at zero
+    two_d_mode: true
+
+    # No lookahead on the published transform; the SBC is not fast enough
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+
+    # Prints per-sensor diagnostics to /diagnostics, useful during bring-up
+    print_diagnostics: true
+    debug: false
+
+    # This node owns odom -> base_link. Set drive_bridge publish_tf to false.
+    publish_tf: true
+
+    # Acceleration is not estimated because no accel input is fused
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+
+    # Continuous local estimate. map -> odom stays with slam_toolbox or AMCL.
+    world_frame: odom
+
+    # ---------------- Wheel odometry ----------------
+    # Order: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    odom0: /drive/odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_queue_size: 10
+    odom0_nodelay: true
+
+    # Absolute rather than incremental; only a velocity is being taken anyway
+    odom0_differential: false
+    odom0_relative: false
+
+    # The bridge multiplies its covariances by odom_openloop_multiplier when
+    # the MCU drops to open loop, so a de-rated encoder reading already tells
+    # the filter to distrust it. No extra rejection threshold is needed here.
+
+    # ---------------- BNO055 ----------------
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_queue_size: 10
+    imu0_nodelay: true
+
+    # Absolute yaw. The bridge already applies imu_yaw_offset_rad = pi, so the
+    # heading handed to the filter is the same one that works today.
+    imu0_differential: false
+
+    # Zeroes yaw at startup instead of trusting the first absolute reading.
+    # Keep false: with the magnetometer uncalibrated the absolute heading
+    # drifts, but it is still the only heading reference in the system and
+    # relative mode would silently discard the pi offset alignment.
+    imu0_relative: false
+
+    # Irrelevant while accel is unfused, but wrong-if-ever-enabled otherwise
+    imu0_remove_gravitational_acceleration: true
+
+    # ---------------- Process noise ----------------
+    # Diagonal only. Raised on yaw and vx relative to stock robot_localization
+    # because a skid-steer chassis breaks the differential-drive motion model
+    # every time it turns, and the filter needs room to follow the gyro.
+    # Order matches the state vector above.
+    process_noise_covariance: [0.02, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.02, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015, 0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.015, 0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.04,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.01, 0.0,  0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.01, 0.0,   0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.025, 0.0,  0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.01, 0.0,  0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.01, 0.0,
+                               0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,   0.0,  0.0,  0.0,   0.0,  0.0,  0.015]
+
+    # ---------------- Initial estimate covariance ----------------
+    # The robot starts at the origin of odom by definition, so pose entries are
+    # near zero. Unobserved dimensions keep 1e-9 as well because two_d_mode
+    # constrains them rather than estimating them.
+    initial_estimate_covariance: [1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
+                                  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9]

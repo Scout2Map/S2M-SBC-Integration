@@ -9,6 +9,8 @@ publishes:
 
   1. robot_state_publisher   base_link -> lidar_link, imu_link, wheel links
   2. s2m_onboard_bridge      odom -> base_link, plus sensor_fusion, range_link
+                             with use_ekf:=true that transform comes from
+                             robot_localization instead of the drive bridge
   3. sllidar_ros2            /scan stamped in lidar_link
   4. slam_toolbox            map -> odom
   5. nav2                    consumes all of the above
@@ -74,6 +76,16 @@ def generate_launch_description():
             description='Start frontier exploration (explore_lite). '
                         'Requires use_nav2:=true; see module docstring.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
+
+        # Passed straight through to s2m_onboard_bridge.launch.py, which is
+        # where the odom -> base_link ownership switch actually happens. It
+        # only takes effect when use_bridges is true, because the EKF belongs
+        # to the bridge layer; if the bridges run in another terminal, pass
+        # use_ekf there instead.
+        DeclareLaunchArgument(
+            'use_ekf', default_value='false',
+            description='Fuse wheel odometry and IMU with robot_localization '
+                        'and let it own /odom and odom -> base_link.'),
 
         # Wheel joints are continuous, so without a joint state source
         # robot_state_publisher cannot complete the tree and RViz complains.
@@ -146,6 +158,9 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(bringup_share, 'launch', 's2m_onboard_bridge.launch.py')
         ),
+        launch_arguments={
+            'use_ekf': LaunchConfiguration('use_ekf'),
+        }.items(),
         condition=IfCondition(LaunchConfiguration('use_bridges')),
     )
 

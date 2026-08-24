@@ -69,7 +69,8 @@ Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
 | `use_sensor_bridge` | `true` | Pico 2 센서 브리지 실행 여부 |
 | `use_drive_bridge` | `true` | STM32 주행 브리지 실행 여부 |
 | `use_drive_link_adapter` | `true` | `DriveStatus` -> `/drive/link_ok` 변환 |
-| `odom_topic` | `/odom` | `drive/odom` remap 대상 |
+| `use_ekf` | `false` | `robot_localization`에 `/odom`과 TF를 넘김 |
+| `odom_topic` | `use_ekf` 따라감 | `drive/odom` remap 대상 |
 | `imu_topic` | `/imu/data` | `drive/imu` remap 대상 |
 | `publish_sensor_frames` | `true` | `sensor_fusion`, `range_link` static TF |
 | `sensor_fusion_x/y/z` | `-0.050 / 0.000 / 0.110` | 측정값 아님, 실차에서 교체 |
@@ -78,8 +79,33 @@ Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
 `s2m_slam_sim.launch.py`와 동시에 실행하면 `/odom`, `/imu/data`, `/cmd_vel`과
 `odom -> base_link` TF가 충돌합니다. 둘 중 하나만 실행합니다.
 
-`robot_localization`을 도입하면 `odom_topic:=/drive/odom`으로 되돌리고
-`drive_bridge`의 `publish_tf`를 `false`로 바꿉니다.
+### EKF (robot_localization)
+
+`use_ekf:=true`면 `s2m_ekf.launch.py`가 함께 올라오고 `odom -> base_link`의 발행 주체가
+바뀝니다. `odom_topic`과 `drive_bridge`의 `publish_tf`는 launch가 자동으로 맞추므로
+따로 지정하지 않습니다.
+
+| `use_ekf` | `odom_topic` | `drive_bridge.publish_tf` | `odom -> base_link` |
+|---|---|---|---|
+| `false` | `/odom` | `true` | `drive_bridge` |
+| `true` | `/drive/odom` | `false` | `ekf_filter_node` |
+
+EKF 출력이 `/odom`으로 리맵되므로 `nav2_lowspec.yaml`과 `slam_toolbox_real.yaml`은
+수정할 필요가 없습니다.
+
+융합하는 상태는 휠 오도메트리의 `vx`, IMU의 `yaw`와 `vyaw` 세 개뿐입니다. 휠 pose를
+받지 않는 이유는 `/drive/odom` 한 메시지 안에 헤딩 출처가 둘(엔코더 적분 위치, IMU
+쿼터니언 방향) 섞여 있어 IMU yaw가 이중으로 계상되기 때문입니다. 휠 `vyaw`는
+`skid_factor` 만큼 과대하고, IMU 가속도는 브리지에서 yaw 오프셋이 이중 적용되어 있어
+둘 다 제외했습니다. 근거와 튜닝 지점은 `config/ekf.yaml`의 주석에 있습니다.
+
+TF 이관 없이 기존 `/odom`과 나란히 비교하려면 EKF만 따로 띄웁니다.
+
+```bash
+ros2 launch s2m_bringup s2m_ekf.launch.py \
+  ekf_odom_topic:=/odometry/filtered ekf_publish_tf:=false \
+  wheel_odom_topic:=/odom
+```
 
 ### drive_link_adapter
 

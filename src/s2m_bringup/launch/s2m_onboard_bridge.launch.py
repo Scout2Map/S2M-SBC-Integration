@@ -8,16 +8,24 @@ concern and therefore belongs here rather than in the bridge repository.
 
 This launch does NOT start LiDAR, SLAM or Nav2. Bring it up first, confirm the
 topics and TF, then start the mapping stack.
+
+use_ekf switches who owns odom -> base_link. With it false the drive bridge
+publishes both /odom and the transform, which is the arrangement that has been
+running so far. With it true the bridge moves to /drive/odom with publish_tf
+off and robot_localization takes over both, so nothing downstream has to change
+its topic names.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -28,8 +36,21 @@ def generate_launch_description():
     drive_params = os.path.join(bridge_share, 'config', 'drive_bridge.yaml')
     adapter_params = os.path.join(
         bringup_share, 'config', 'drive_link_adapter.yaml')
+    ekf_params = os.path.join(bringup_share, 'config', 'ekf.yaml')
+
+    # LaunchConfiguration values arrive as strings, so quote before comparing
+    ekf_on = PythonExpression(
+        ["'", LaunchConfiguration('use_ekf'), "'.lower() in ('true', '1')"])
+    ekf_off = PythonExpression(['not (', ekf_on, ')'])
 
     args = [
+        # Off by default: turning this on moves who publishes odom -> base_link
+        DeclareLaunchArgument(
+            'use_ekf', default_value='false',
+            description='Start robot_localization and hand it /odom and the '
+                        'odom -> base_link transform.'),
+        DeclareLaunchArgument('ekf_params_file', default_value=ekf_params),
+
         DeclareLaunchArgument('use_sensor_bridge', default_value='true'),
         DeclareLaunchArgument('use_drive_bridge', default_value='true'),
         DeclareLaunchArgument('use_drive_link_adapter', default_value='true'),
@@ -39,12 +60,15 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'drive_link_adapter_params_file', default_value=adapter_params),
 
-        # Nav2 and slam_toolbox in this repo read /odom. Until an EKF owns that
-        # name, wheel odometry is published straight onto it.
+        # Nav2 and slam_toolbox in this repo read /odom. Without the EKF the
+        # wheel odometry is published straight onto that name; with it the
+        # bridge steps aside to /drive/odom and becomes an EKF input.
         DeclareLaunchArgument(
-            'odom_topic', default_value='/odom',
+            'odom_topic',
+            default_value=PythonExpression(
+                ["'/drive/odom' if ", ekf_on, " else '/odom'"]),
             description='Where the drive bridge odometry is remapped to. '
-                        'Set to /drive/odom once robot_localization owns /odom.'),
+                        'Follows use_ekf unless set explicitly.'),
 
         # The bridge publishes Imu on drive/imu; the validation docs use
         # /imu/data, which is also what robot_localization expects by default.
@@ -84,7 +108,13 @@ def generate_launch_description():
         name='drive_bridge',
         output='screen',
         emulate_tty=True,
-        parameters=[LaunchConfiguration('drive_params_file')],
+        parameters=[
+            LaunchConfiguration('drive_params_file'),
+            # Overrides drive_bridge.yaml so the two never both publish the
+            # transform. A tf tree with two publishers of one edge does not
+            # error, it just jitters, which is expensive to diagnose later.
+            {'publish_tf': ParameterValue(ekf_off, value_type=bool)},
+        ],
         remappings=[
             ('drive/odom', LaunchConfiguration('odom_topic')),
             ('drive/imu', LaunchConfiguration('imu_topic')),
@@ -100,6 +130,20 @@ def generate_launch_description():
         emulate_tty=True,
         parameters=[LaunchConfiguration('drive_link_adapter_params_file')],
         condition=IfCondition(LaunchConfiguration('use_drive_link_adapter')),
+    )
+
+    ekf = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(bringup_share, 'launch', 's2m_ekf.launch.py')),
+        launch_arguments={
+            'use_ekf': LaunchConfiguration('use_ekf'),
+            'ekf_params_file': LaunchConfiguration('ekf_params_file'),
+            'wheel_odom_topic': LaunchConfiguration('odom_topic'),
+            'imu_topic': LaunchConfiguration('imu_topic'),
+            'ekf_odom_topic': '/odom',
+            'ekf_publish_tf': 'true',
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('use_ekf')),
     )
 
     # static_transform_publisher takes positional args as --x --y --z ...
@@ -137,6 +181,7 @@ def generate_launch_description():
         sensor_bridge,
         drive_bridge,
         drive_link_adapter,
+        ekf,
         sensor_fusion_tf,
         range_link_tf,
     ])
