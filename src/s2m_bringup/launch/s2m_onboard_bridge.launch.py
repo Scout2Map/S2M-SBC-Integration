@@ -44,9 +44,11 @@ def generate_launch_description():
     ekf_off = PythonExpression(['not (', ekf_on, ')'])
 
     args = [
-        # Off by default: turning this on moves who publishes odom -> base_link
+        # On by default since 2026-08-24 field testing. Set false to fall back
+        # to the drive bridge owning /odom and odom -> base_link, which is the
+        # only arrangement that works if robot_localization is not installed.
         DeclareLaunchArgument(
-            'use_ekf', default_value='false',
+            'use_ekf', default_value='true',
             description='Start robot_localization and hand it /odom and the '
                         'odom -> base_link transform.'),
         DeclareLaunchArgument('ekf_params_file', default_value=ekf_params),

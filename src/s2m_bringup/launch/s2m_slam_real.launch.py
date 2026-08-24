@@ -83,7 +83,7 @@ def generate_launch_description():
         # to the bridge layer; if the bridges run in another terminal, pass
         # use_ekf there instead.
         DeclareLaunchArgument(
-            'use_ekf', default_value='false',
+            'use_ekf', default_value='true',
             description='Fuse wheel odometry and IMU with robot_localization '
                         'and let it own /odom and odom -> base_link.'),
 

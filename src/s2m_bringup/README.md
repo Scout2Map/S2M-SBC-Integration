@@ -69,7 +69,7 @@ Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
 | `use_sensor_bridge` | `true` | Pico 2 센서 브리지 실행 여부 |
 | `use_drive_bridge` | `true` | STM32 주행 브리지 실행 여부 |
 | `use_drive_link_adapter` | `true` | `DriveStatus` -> `/drive/link_ok` 변환 |
-| `use_ekf` | `false` | `robot_localization`에 `/odom`과 TF를 넘김 |
+| `use_ekf` | `true` | `robot_localization`에 `/odom`과 TF를 넘김 |
 | `odom_topic` | `use_ekf` 따라감 | `drive/odom` remap 대상 |
 | `imu_topic` | `/imu/data` | `drive/imu` remap 대상 |
 | `publish_sensor_frames` | `true` | `sensor_fusion`, `range_link` static TF |
@@ -81,8 +81,9 @@ Nav2/SLAM 설정이 읽는 이름으로 토픽을 정리합니다.
 
 ### EKF (robot_localization)
 
-`use_ekf:=true`면 `s2m_ekf.launch.py`가 함께 올라오고 `odom -> base_link`의 발행 주체가
-바뀝니다. `odom_topic`과 `drive_bridge`의 `publish_tf`는 launch가 자동으로 맞추므로
+기본값이 `true`이며 `s2m_ekf.launch.py`가 함께 올라와 `odom -> base_link`의 발행 주체가
+바뀝니다. `robot_localization`이 설치돼 있지 않거나 브리지 단독으로 확인할 때만
+`use_ekf:=false`로 되돌립니다. `odom_topic`과 `drive_bridge`의 `publish_tf`는 launch가 자동으로 맞추므로
 따로 지정하지 않습니다.
 
 | `use_ekf` | `odom_topic` | `drive_bridge.publish_tf` | `odom -> base_link` |
