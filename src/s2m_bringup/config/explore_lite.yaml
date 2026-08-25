@@ -28,8 +28,8 @@
     # lowest wins. At 3.0 / 1.0 distance dominated and the robot kept picking
     # the nearest scrap of frontier instead of committing to a large unexplored
     # area, which showed up as zig-zagging. Weighted towards size instead.
-    potential_scale: 1.5
-    orientation_scale: 0.0
-    gain_scale: 2.5
-    transform_tolerance: 0.3
-    min_frontier_size: 0.75
+    potential_scale: 5.0
+    orientation_scale: 0.5
+    gain_scale: 0.5
+    transform_tolerance: 1.0
+    min_frontier_size: 0.15

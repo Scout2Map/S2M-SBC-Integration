@@ -115,7 +115,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.20
+      robot_radius: 0.14
       # increase tf tolerance to avoid dropped scan messages
       transform_tolerance: 1.0
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -138,7 +138,7 @@ local_costmap:
         # Must stay comfortably above robot_radius. At 0.2 it equalled the
         # inscribed radius, so the exponential decay band had zero width and
         # nothing pushed the controller away from walls.
-        cost_scaling_factor: 1.0
+        cost_scaling_factor: 6.0
         inflation_radius: 0.35
       always_send_full_costmap: True
       
@@ -149,7 +149,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.20
+      robot_radius: 0.14
       resolution: 0.05
       track_unknown_space: true
       # increase tf tolerance
@@ -178,7 +178,7 @@ global_costmap:
         # gradient rather than from the controller. Lower cost_scaling_factor
         # decays more slowly and therefore pushes the path further out; the
         # old 3.0 over a 10cm band made wall-hugging the cheapest route.
-        cost_scaling_factor: 2.0
+        cost_scaling_factor: 5.0
         inflation_radius: 0.40
       always_send_full_costmap: True
 
