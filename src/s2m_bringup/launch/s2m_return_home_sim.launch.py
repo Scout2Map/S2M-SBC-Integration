@@ -72,7 +72,10 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument('use_rviz', default_value='true'),
         DeclareLaunchArgument('headless', default_value='false'),
-        DeclareLaunchArgument('x_pose', default_value='-3.0'),
+        # Keep the initial pose near the centre of the mapped world.  Starting
+        # at the far left edge makes SLAM publish (0, 0) on the costmap boundary
+        # and Nav2 cannot plan a return to the captured pose.
+        DeclareLaunchArgument('x_pose', default_value='0.0'),
         DeclareLaunchArgument('y_pose', default_value='0.0'),
         base_sim,
         fault_injector,
