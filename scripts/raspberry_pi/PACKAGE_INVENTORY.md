@@ -23,6 +23,7 @@
 | `ros-base` | headless ROS 런타임 |
 | `navigation2`, `nav2-bringup` | `s2m_slam_real.launch.py`의 `use_nav2:=true` |
 | `slam-toolbox` | 실시간 2D 매핑, `map -> odom` 발행 |
+| `robot-localization` | `use_ekf:=true`(기본값)일 때 wheel odometry + IMU를 융합해 `/odom`과 `odom -> base_link`를 발행 |
 | `robot-state-publisher`, `joint-state-publisher`, `xacro` | URDF에서 `base_link -> lidar_link` 등 TF 생성 |
 | `tf2-tools`, `tf2-ros` | `tf2_echo`, `view_frames`, static transform publisher |
 | `teleop-twist-keyboard` | 수동 주행 시험 |
@@ -52,12 +53,13 @@
 |---|---|
 | Micro-ROS | MCU 연결은 USB CDC 브리지를 사용한다 |
 | ONNX Runtime 전역 설치 | 기본 추론은 OpenCV DNN을 쓰며 비교 시험용 Runtime은 전용 venv에만 설치한다 |
-| `robot_localization` | 실차 EKF가 아직 구성되지 않았다. 도입 시 추가한다 |
 | Gazebo (`onboard`) | 로봇에서 시뮬레이터를 실행하지 않는다 |
 
-`robot_localization`을 도입하면 `drive_bridge`의 `publish_tf`를 `false`로 바꾸어
-`odom -> base_link` 발행 주체를 하나로 유지해야 한다. 이때 필요한 패키지 목록은
-`manifests/reference/ros-slam-future-ekf.txt`에 참고용으로 남아 있다 (install.sh는
+`robot_localization`은 2026-08-24 실차 EKF 도입으로 이미 `ros-onboard.txt`에 포함돼
+있고 `use_ekf:=true`가 기본값이다. `drive_bridge`의 `publish_tf`는 `s2m_onboard_bridge.launch.py`가
+`use_ekf` 값에 따라 자동으로 켜고 끄므로 수동으로 바꿀 필요는 없다 (`ekf_off` 표현식으로
+`publish_tf` 파라미터를 오버라이드). `manifests/reference/ros-slam-future-ekf.txt`는 이
+전환이 있기 전 참고용으로 남겨둔 옛 목록이라 이제는 쓰지 않는다 (install.sh는 원래부터
 이 파일을 읽지 않는다).
 
 ## 완료 판정
@@ -68,7 +70,7 @@
 
 필수 항목은 Ubuntu 24.04, ROS 2 Jazzy, 워크스페이스 빌드 산출물, 그리고
 `s2m_bringup`, `s2m_description`, `scout_gas`, `scout_vision`, `scout2map_bridge`,
-`scout2map_msgs`, `scout2map_event`, `slam_toolbox`, `nav2_bringup`,
-`explore_lite`이다.
+`scout2map_msgs`, `scout2map_event`, `slam_toolbox`, `robot_localization`,
+`nav2_bringup`, `explore_lite`이다.
 
 `onboard`에서는 세 장치 심볼릭 링크와 `dialout` 그룹 소속도 함께 확인한다.
