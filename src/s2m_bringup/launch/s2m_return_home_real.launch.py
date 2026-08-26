@@ -14,6 +14,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     bringup_share = get_package_share_directory('s2m_bringup')
     event_share = get_package_share_directory('scout2map_event')
+    vision_share = get_package_share_directory('scout_vision')
 
     real_stack = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -25,8 +26,13 @@ def generate_launch_description():
             'use_slam': LaunchConfiguration('use_slam'),
             'use_nav2': LaunchConfiguration('use_nav2'),
             'use_event_engine': LaunchConfiguration('use_event_engine'),
+            'use_event_markers': LaunchConfiguration('use_event_markers'),
+            'use_vision': LaunchConfiguration('use_vision'),
             'use_rviz': LaunchConfiguration('use_rviz'),
             'event_params': LaunchConfiguration('event_params'),
+            'vision_params': LaunchConfiguration('vision_params'),
+            'vision_model': LaunchConfiguration('vision_model'),
+            'vision_labels': LaunchConfiguration('vision_labels'),
             'map_id': LaunchConfiguration('map_id'),
             'nav_cmd_vel_topic': '/return_home/cmd_vel_input',
         }.items(),
@@ -56,12 +62,20 @@ def generate_launch_description():
         DeclareLaunchArgument('use_slam', default_value='true'),
         DeclareLaunchArgument('use_nav2', default_value='true'),
         DeclareLaunchArgument('use_event_engine', default_value='true'),
+        DeclareLaunchArgument('use_event_markers', default_value='false'),
+        DeclareLaunchArgument('use_vision', default_value='false'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('map_id', default_value=''),
         DeclareLaunchArgument(
             'event_params',
             default_value=os.path.join(
                 event_share, 'config', 'event_engine.yaml')),
+        DeclareLaunchArgument(
+            'vision_params',
+            default_value=os.path.join(
+                vision_share, 'config', 'vision.yaml')),
+        DeclareLaunchArgument('vision_model', default_value=''),
+        DeclareLaunchArgument('vision_labels', default_value=''),
         DeclareLaunchArgument(
             'return_home_params',
             default_value=os.path.join(

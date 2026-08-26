@@ -13,6 +13,7 @@ Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을 실행하기
 - Pico 센서와 STM32 주행 MCU의 USB CDC 장치, ROS 토픽, TF 프레임 점검
 - 주행 브리지 `DriveStatus`를 자동 복귀 정책의 `/drive/link_ok`로 변환
 - 임계값 이벤트 엔진(`scout2map_event`) 워크스페이스 통합
+- YOLOv8 ONNX Vision 래퍼와 Event Engine `/events` 연동
 - 프론티어 기반 자율 탐색(`explore_lite`, `use_exploration:=true`) 통합
 - RPLIDAR C1 드라이버 및 선택형 OpenCV/ONNX Runtime 설치
 - Python/XML/YAML/Markdown/셸 정적 검사 자동화
@@ -43,6 +44,7 @@ S2M-SBC-Integration/
 │   └── manifests/                 # apt/pip 설치 목록 (install.sh가 읽는 목록만 존재)
 ├── src/
 │   ├── s2m_bringup/               # Gazebo + SLAM Toolbox + Nav2
+│   ├── scout_vision/               # USB 카메라 + ONNX 객체 검출 래퍼
 │   └── scout_gas/                 # 가스 센서·위험 지도 시뮬레이션
 ├── dependencies.repos             # 빌드에 필요한 ROS 소스 목록
 ├── RELEASE_NOTES.md               # 통합 버전별 변경과 검증 범위
@@ -79,8 +81,9 @@ chmod +x scripts/raspberry_pi/*.sh
 sudo reboot
 ```
 
-RPLIDAR 패키지는 onboard profile에 포함됩니다. 카메라와 ONNX Runtime Python 환경은
-기본 설치 후 `scripts/raspberry_pi/create_vision_venv.sh onnx`로 별도 구성합니다.
+RPLIDAR와 Vision ROS 의존성은 onboard profile에 포함됩니다. 기본 Vision 노드는
+OpenCV DNN을 사용하며, ONNX Runtime 비교 환경이 필요할 때만
+`scripts/raspberry_pi/create_vision_venv.sh onnx`를 실행합니다.
 
 ### Gazebo 개발 환경
 
@@ -114,6 +117,7 @@ workspace와 overlay가 준비된 개발 환경에서만 사용하며, 신규 �
 mkdir -p ~/scout2map_ws/src
 ln -s "$PWD/src/s2m_bringup" ~/scout2map_ws/src/s2m_bringup
 ln -s "$PWD/src/scout_gas" ~/scout2map_ws/src/scout_gas
+ln -s "$PWD/src/scout_vision" ~/scout2map_ws/src/scout_vision
 vcs import ~/scout2map_ws/src < dependencies.repos
 
 source /opt/ros/jazzy/setup.bash
@@ -139,6 +143,7 @@ ros2 launch s2m_bringup s2m_slam_real.launch.py
 3. `sllidar_ros2` — `lidar_link` 기준 `/scan`
 4. `slam_toolbox` — `map -> odom`
 5. Nav2 — 위 전부를 소비
+6. `scout_vision` — 선택형 USB 카메라 객체 검출
 
 Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 확인한 뒤
 `use_nav2:=true`로 다시 실행합니다.
@@ -150,6 +155,9 @@ Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 �
 | `use_slam` | `true` | slam_toolbox 실행 |
 | `use_nav2` | `false` | Nav2 실행 |
 | `use_event_engine` | `false` | `/events` 이벤트 엔진 실행 |
+| `use_event_markers` | `false` | `/events`를 RViz marker로 표시(시험용) |
+| `use_exploration` | `false` | 프론티어 자율 탐색 실행 (`use_nav2:=true` 필요) |
+| `use_vision` | `false` | USB 카메라와 AI Vision 노드 실행 |
 | `use_rviz` | `false` | RViz 실행 |
 | `lidar_port` | `/dev/scout2map_lidar` | udev 규칙 미설치 시 `/dev/ttyUSB0` |
 | `lidar_frame` | `lidar_link` | URDF 링크 이름과 반드시 일치해야 함 |
@@ -318,6 +326,7 @@ ros2 launch s2m_bringup s2m_onboard_bridge.launch.py
 | `/drive/link_ok` | `std_msgs/msg/Bool` | `drive_link_adapter` |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | Nav2 또는 조종 노드 |
 | `/events` | `std_msgs/msg/String` | `scout2map_event` (선택) |
+| `/vision/detections` | `vision_msgs/msg/Detection2DArray` | `scout_vision` (선택) |
 
 전체 계약과 V1.0.0 대비 변경 이력은
 [MCU 브리지 인터페이스 계약](docs/integration/bridge-interface-contract.md)에

@@ -15,6 +15,7 @@ publishes:
   4. slam_toolbox            map -> odom
   5. nav2                    consumes all of the above
   6. explore_lite            optional; drives Nav2 from Nav2's own costmap
+  7. scout_vision            optional; publishes detections for Event Engine
 
 Nav2 is off by default. Bring the stack up without it, confirm the map and TF
 tree are stable, then relaunch with use_nav2:=true. Frontier exploration
@@ -40,6 +41,7 @@ def generate_launch_description():
     description_share = get_package_share_directory('s2m_description')
     bringup_share = get_package_share_directory('s2m_bringup')
     event_share = get_package_share_directory('scout2map_event')
+    vision_share = get_package_share_directory('scout_vision')
 
     xacro_file = os.path.join(
         description_share, 'urdf', 'scout2map.urdf.xacro')
@@ -51,6 +53,8 @@ def generate_launch_description():
         event_share, 'config', 'event_engine.yaml')
     default_explore_params = os.path.join(
         bringup_share, 'config', 'explore_lite.yaml')
+    default_vision_params = os.path.join(
+        vision_share, 'config', 'vision.yaml')
     default_lidar_port = (
         '/dev/scout2map_lidar'
         if os.path.exists('/dev/scout2map_lidar')
@@ -72,9 +76,15 @@ def generate_launch_description():
             'use_event_engine', default_value='false',
             description='Start the threshold event engine.'),
         DeclareLaunchArgument(
+            'use_event_markers', default_value='false',
+            description='Show /events as RViz markers (debug/test).'),
+        DeclareLaunchArgument(
             'use_exploration', default_value='false',
             description='Start frontier exploration (explore_lite). '
                         'Requires use_nav2:=true; see module docstring.'),
+        DeclareLaunchArgument(
+            'use_vision', default_value='false',
+            description='Start the USB camera and AI Vision wrapper.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
 
         # Passed straight through to s2m_onboard_bridge.launch.py, which is
@@ -112,6 +122,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'explore_params', default_value=default_explore_params),
         DeclareLaunchArgument(
+            'vision_params', default_value=default_vision_params),
+        DeclareLaunchArgument('vision_model', default_value=''),
+        DeclareLaunchArgument('vision_labels', default_value=''),
+        DeclareLaunchArgument(
             'map_id', default_value='',
             description='Mapping-session identifier included in event JSON.'),
         DeclareLaunchArgument(
@@ -128,6 +142,7 @@ def generate_launch_description():
         # this is later than nav2_start_delay, not relative to it (launch
         # arguments cannot be summed as substitutions here).
         DeclareLaunchArgument('exploration_start_delay', default_value='16.0'),
+        DeclareLaunchArgument('vision_start_delay', default_value='7.0'),
     ]
 
     # xacro is expanded here so robot_description is a plain URDF string
@@ -239,6 +254,18 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_event_engine')),
     )
 
+    event_markers = TimerAction(
+        period=LaunchConfiguration('event_start_delay'),
+        actions=[Node(
+            package='scout2map_event',
+            executable='event_marker_bridge',
+            name='event_marker_bridge',
+            output='screen',
+            emulate_tty=True,
+        )],
+        condition=IfCondition(LaunchConfiguration('use_event_markers')),
+    )
+
     exploration = TimerAction(
         period=LaunchConfiguration('exploration_start_delay'),
         actions=[Node(
@@ -253,6 +280,21 @@ def generate_launch_description():
             ],
         )],
         condition=IfCondition(LaunchConfiguration('use_exploration')),
+    )
+
+    vision = TimerAction(
+        period=LaunchConfiguration('vision_start_delay'),
+        actions=[IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(vision_share, 'launch', 'vision.launch.py')
+            ),
+            launch_arguments={
+                'params_file': LaunchConfiguration('vision_params'),
+                'model_path': LaunchConfiguration('vision_model'),
+                'labels_path': LaunchConfiguration('vision_labels'),
+            }.items(),
+        )],
+        condition=IfCondition(LaunchConfiguration('use_vision')),
     )
 
     rviz = Node(
@@ -271,7 +313,9 @@ def generate_launch_description():
         lidar,
         slam,
         event_engine,
+        event_markers,
         nav2,
         exploration,
+        vision,
         rviz,
     ])

@@ -64,7 +64,7 @@ sudo reboot
 
 ## 패키지 목록
 
-`manifests/` 아래 네 파일이 설치 대상을 정의한다.
+`manifests/`의 기본 파일과 선택형 Vision 파일이 설치 대상을 정의한다.
 
 | 파일 | 시점 |
 |---|---|
@@ -72,6 +72,7 @@ sudo reboot
 | `ros-tools.txt` | colcon, rosdep, vcstool 등 빌드 도구 |
 | `ros-onboard.txt` | SLAM, Nav2, URDF, 조종 등 로봇 실행에 필요한 전부 |
 | `ros-sim.txt` | Gazebo와 RViz. `sim` 프로파일 전용 |
+| `ros-vision.txt` | `create_vision_venv.sh`가 설치하는 카메라·Vision 스택 |
 
 `ros-onboard.txt`의 모든 항목은 `s2m_bringup`의 launch 파일이 실제로 사용한다.
 사용하는 노드가 생기기 전까지는 패키지를 추가하지 않는다.
@@ -86,6 +87,9 @@ sudo reboot
 | `S2M-MCU-BridgeNode` | `scout2map_bridge`, `scout2map_msgs` |
 | `S2M-Event-Engine` | `scout2map_event` |
 | `sllidar_ros2` | RPLiDAR C1 드라이버 |
+
+저장소 자체의 `scout_vision`은 기본 빌드에 포함되지만 `use_vision`은 기본적으로
+꺼져 있다. 실차에서 실행하기 전에 모델과 클래스 파일을 준비한다.
 
 저장소를 갱신했다면 `dependencies.repos`의 커밋 핀도 함께 옮긴다. 핀이 옛 커밋을
 가리키면 `vcs import`가 옛 코드를 가져오며, 이는 빌드 성공 여부로는 드러나지 않는다.

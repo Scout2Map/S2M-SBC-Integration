@@ -14,6 +14,7 @@
 | `ros-tools.txt` | ROS 저장소 등록 후 | `ros-dev-tools`, `rosdep`, `colcon`, `vcstool` |
 | `ros-onboard.txt` | 두 프로파일 공통 | 아래 표 참조 |
 | `ros-sim.txt` | `sim` 프로파일만 | `ros-jazzy-desktop`, RViz, `ros_gz_sim`, `ros_gz_bridge` |
+| `ros-vision.txt` | Vision 환경 구성 시 | 카메라, `vision_msgs`, OpenCV와 image transport |
 
 ### `ros-onboard.txt`의 구성
 
@@ -42,7 +43,7 @@
 | `sllidar_ros2` | `sllidar_ros2` | RPLiDAR C1 드라이버 |
 | `m-explore-ros2` | `explore_lite`, `explore_lite_msgs`, `multirobot_map_merge`(미사용) | 프론티어 자율 탐색, `use_exploration:=true` |
 
-이 저장소 자체가 제공하는 패키지는 `s2m_bringup`과 `scout_gas`이며 워크스페이스에
+이 저장소 자체가 제공하는 패키지는 `s2m_bringup`, `scout_gas`, `scout_vision`이며 워크스페이스에
 심볼릭 링크로 연결된다.
 
 ## 설치하지 않는 것
@@ -50,7 +51,7 @@
 | 항목 | 이유 |
 |---|---|
 | Micro-ROS | MCU 연결은 USB CDC 브리지를 사용한다 |
-| 카메라 스택, ONNX Runtime | Vision AI 노드가 아직 없다 |
+| ONNX Runtime 전역 설치 | 기본 추론은 OpenCV DNN을 쓰며 비교 시험용 Runtime은 전용 venv에만 설치한다 |
 | `robot_localization` | 실차 EKF가 아직 구성되지 않았다. 도입 시 추가한다 |
 | Gazebo (`onboard`) | 로봇에서 시뮬레이터를 실행하지 않는다 |
 
@@ -66,7 +67,7 @@
 ```
 
 필수 항목은 Ubuntu 24.04, ROS 2 Jazzy, 워크스페이스 빌드 산출물, 그리고
-`s2m_bringup`, `s2m_description`, `scout_gas`, `scout2map_bridge`,
+`s2m_bringup`, `s2m_description`, `scout_gas`, `scout_vision`, `scout2map_bridge`,
 `scout2map_msgs`, `scout2map_event`, `slam_toolbox`, `nav2_bringup`,
 `explore_lite`이다.
 

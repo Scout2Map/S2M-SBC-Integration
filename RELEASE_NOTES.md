@@ -1,5 +1,21 @@
 # Release Notes
 
+## 개발 중 - AI Vision
+
+### 변경
+
+- `scout_vision` 패키지를 추가해 USB 카메라 영상을 YOLOv8 ONNX 모델로 추론하고
+  `vision_msgs/Detection2DArray`, 모델 SHA-256과 진단 정보를 발행한다.
+- 실차 launch에 선택형 `use_vision` 경로를 추가하고 Vision 검출을 Event Engine의
+  단일 `/events` 발행 경로로 통합한다.
+- 2D 검출에는 깊이가 없으므로 지도 이벤트 좌표가 객체가 아닌 촬영 당시 로봇
+  위치임을 계약에 명시한다.
+
+### 검증 필요
+
+- 확정 모델과 COMS AU142 실기기로 정확도, FPS, p50/p95 지연 및 Pi 5의 전력·온도와
+  SLAM/Nav2 주기 영향을 측정해야 한다.
+
 ## V1.0.5 - 2026-08-18
 
 ### 변경

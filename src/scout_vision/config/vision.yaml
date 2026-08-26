@@ -1,0 +1,25 @@
+v4l2_camera:
+  ros__parameters:
+    # COMS AU142 is FHD-capable. Start at a Pi-friendly rate and raise only
+    # after measuring inference latency and SLAM/Nav2 topic stability.
+    video_device: /dev/video0
+    pixel_format: YUYV
+    output_encoding: rgb8
+    image_size: [640, 480]
+    time_per_frame: [1, 10]
+    use_v4l2_buffer_timestamps: true
+
+scout_vision:
+  ros__parameters:
+    image_topic: /camera/image_raw
+    detections_topic: /vision/detections
+    diagnostics_topic: /diagnostics
+    vision_info_topic: /vision/info
+    model_path: ""
+    labels_path: ""
+    input_width: 640
+    input_height: 640
+    confidence_threshold: 0.5
+    nms_threshold: 0.45
+    max_fps: 5.0
+    frame_timeout_s: 2.0

@@ -10,7 +10,7 @@ repositories:
   s2m_event_engine:
     type: git
     url: https://github.com/Scout2Map/S2M-Event-Engine.git
-    version: cd25471e596e9657d03c006456892efb15528000
+    version: c29782b900a170cf43e2638e9d068b5c776d2a2c
   sllidar_ros2:
     type: git
     url: https://github.com/Slamtec/sllidar_ros2.git

@@ -28,6 +28,7 @@
   <exec_depend>scout2map_msgs</exec_depend>
   <exec_depend>scout2map_bridge</exec_depend>
   <exec_depend>scout2map_event</exec_depend>
+  <exec_depend>scout_vision</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>sllidar_ros2</exec_depend>

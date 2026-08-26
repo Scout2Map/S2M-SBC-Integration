@@ -5,6 +5,7 @@ BACKEND="${1:-onnx}"
 VENV_DIR="${2:-${HOME}/scout2map_venvs/vision}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REQUIREMENTS="${SCRIPT_DIR}/manifests/pip-onnx.txt"
+ROS_REQUIREMENTS="${SCRIPT_DIR}/manifests/ros-vision.txt"
 
 case "$BACKEND" in
   opencv|onnx) ;;
@@ -12,8 +13,15 @@ case "$BACKEND" in
 esac
 
 if [[ "${SCOUT2MAP_SKIP_APT:-0}" != 1 ]]; then
+  [[ -f "$ROS_REQUIREMENTS" ]] || {
+    printf 'Missing requirements file: %s\n' "$ROS_REQUIREMENTS" >&2
+    exit 1
+  }
+  mapfile -t ROS_PACKAGES < <(
+    sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$ROS_REQUIREMENTS"
+  )
   sudo apt-get update
-  sudo apt-get install -y python3-venv python3-opencv python3-numpy
+  sudo apt-get install -y "${ROS_PACKAGES[@]}"
 fi
 
 python3 -m venv --system-site-packages "$VENV_DIR"
