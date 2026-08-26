@@ -16,6 +16,7 @@ publishes:
   5. nav2                    consumes all of the above
   6. explore_lite            optional; drives Nav2 from Nav2's own costmap
   7. scout_vision            optional; publishes detections for Event Engine
+  8. return_home             optional; failsafe home supervisor and safety gate
 
 Nav2 is off by default. Bring the stack up without it, confirm the map and TF
 tree are stable, then relaunch with use_nav2:=true. Frontier exploration
@@ -32,7 +33,7 @@ from launch.actions import (
     DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -55,11 +56,17 @@ def generate_launch_description():
         bringup_share, 'config', 'explore_lite.yaml')
     default_vision_params = os.path.join(
         vision_share, 'config', 'vision.yaml')
+    default_return_home_params = os.path.join(
+        bringup_share, 'config', 'return_home_real.yaml')
     default_lidar_port = (
         '/dev/scout2map_lidar'
         if os.path.exists('/dev/scout2map_lidar')
         else '/dev/ttyUSB0'
     )
+
+    # evaluate return_home toggle for dynamic cmd_vel routing
+    return_home_on = PythonExpression(
+        ["'", LaunchConfiguration('use_return_home'), "'.lower() in ('true', '1')"])
 
     args = [
         # --- layer toggles ---
@@ -85,6 +92,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_vision', default_value='false',
             description='Start the USB camera and AI Vision wrapper.'),
+        DeclareLaunchArgument(
+            'use_return_home', default_value='false',
+            description='Start the return-home supervisor and cmd_vel safety gate.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
 
         # Passed straight through to s2m_onboard_bridge.launch.py, which is
@@ -126,11 +136,16 @@ def generate_launch_description():
         DeclareLaunchArgument('vision_model', default_value=''),
         DeclareLaunchArgument('vision_labels', default_value=''),
         DeclareLaunchArgument(
+            'return_home_params', default_value=default_return_home_params),
+        DeclareLaunchArgument(
             'map_id', default_value='',
             description='Mapping-session identifier included in event JSON.'),
         DeclareLaunchArgument(
-            'nav_cmd_vel_topic', default_value='/cmd_vel',
-            description='Destination for Nav2 velocity output.'),
+            'nav_cmd_vel_topic',
+            default_value=PythonExpression(
+                ["'/return_home/cmd_vel_input' if ", return_home_on, " else '/cmd_vel'"]),
+            description='Destination for Nav2 velocity output. Automatically routes '
+                        'through safety gate if return_home is enabled.'),
 
         # Seconds to wait before starting SLAM and Nav2. The bridges need to
         # open their serial ports and the LiDAR needs to spin up first.
@@ -143,6 +158,7 @@ def generate_launch_description():
         # arguments cannot be summed as substitutions here).
         DeclareLaunchArgument('exploration_start_delay', default_value='16.0'),
         DeclareLaunchArgument('vision_start_delay', default_value='7.0'),
+        DeclareLaunchArgument('return_home_start_delay', default_value='10.0'),
     ]
 
     # xacro is expanded here so robot_description is a plain URDF string
@@ -297,6 +313,31 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_vision')),
     )
 
+    # start safety gate and return home supervisor after nav2 initializes
+    return_home = TimerAction(
+        period=LaunchConfiguration('return_home_start_delay'),
+        actions=[
+            Node(
+                package='s2m_bringup',
+                executable='cmd_vel_safety_gate',
+                name='cmd_vel_safety_gate',
+                output='screen',
+                emulate_tty=True,
+                parameters=[LaunchConfiguration('return_home_params')],
+                condition=IfCondition(LaunchConfiguration('use_return_home')),
+            ),
+            Node(
+                package='s2m_bringup',
+                executable='return_home',
+                name='return_home',
+                output='screen',
+                emulate_tty=True,
+                parameters=[LaunchConfiguration('return_home_params')],
+                condition=IfCondition(LaunchConfiguration('use_return_home')),
+            ),
+        ],
+    )
+
     rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -317,5 +358,6 @@ def generate_launch_description():
         nav2,
         exploration,
         vision,
+        return_home,
         rviz,
     ])
