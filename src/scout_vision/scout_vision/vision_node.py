@@ -148,8 +148,9 @@ class VisionNode(Node):
 
         started = time.perf_counter()
         try:
+            # receive native rgb8 image without extra format conversion
             image = self._bridge.imgmsg_to_cv2(
-                message, desired_encoding='bgr8')
+                message, desired_encoding='rgb8')
             tensor, scale, padding = prepare_input(
                 image, self._input_width, self._input_height)
             self._net.setInput(tensor)
