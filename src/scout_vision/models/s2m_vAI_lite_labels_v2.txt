@@ -1,0 +1,5 @@
+person
+fire_smoke
+exit_indicator
+gas_tank
+fire_extinguisher
