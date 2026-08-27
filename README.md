@@ -1,13 +1,15 @@
-# S2M SBC Integration
+# S2M-SBC-Integration
 
-Raspberry Pi 5에서 Scout2Map UGV의 ROS 2 실행 환경을 설치하고, 실차 형상 기반
-Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을 실행하기 위한 통합 프로젝트입니다.
+**Scout2Map** — 다중 센서 기반 환경 적응형 정찰 UGV. Raspberry Pi 5에서 ROS 2 실행
+환경을 설치하고, 실차 형상 기반 Gazebo 시뮬레이션과 SLAM/Nav2·가스 위험 지도 기능을
+실행하기 위한 통합 프로젝트입니다.
 
 ## 구현된 기능
 
 - Ubuntu 24.04와 ROS 2 Jazzy 설치 및 호환성 점검
 - 실차 `base_link`·LiDAR·IMU 프레임을 사용하는 Gazebo bringup
 - SLAM Toolbox와 Nav2의 저사양 시뮬레이션 설정
+- `robot_localization` 기반 EKF로 휠 오도메트리와 IMU를 융합 (`use_ekf:=true` 기본값)
 - 관제망 단절 시 Nav2 출발점 복귀와 주행 링크·TF 장애 안전 정지 시뮬레이션
 - 선택성 가스 센서, 육각형 위험 지도, 이벤트 JSON과 occupancy map 저장
 - Pico 센서와 STM32 주행 MCU의 USB CDC 장치, ROS 토픽, TF 프레임 점검
@@ -158,6 +160,7 @@ Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 �
 | `use_event_markers` | `false` | `/events`를 RViz marker로 표시(시험용) |
 | `use_exploration` | `false` | 프론티어 자율 탐색 실행 (`use_nav2:=true` 필요) |
 | `use_vision` | `false` | USB 카메라와 AI Vision 노드 실행 |
+| `use_ekf` | `true` | `robot_localization` EKF로 `odom -> base_link` 발행 주체 결정 |
 | `use_rviz` | `false` | RViz 실행 |
 | `lidar_port` | `/dev/scout2map_lidar` | udev 규칙 미설치 시 `/dev/ttyUSB0` |
 | `lidar_frame` | `lidar_link` | URDF 링크 이름과 반드시 일치해야 함 |
@@ -191,8 +194,9 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args \
 브리지 단독 바퀴 띄움 시험에서는 `/cmd_vel` 직접 발행을 사용할 수 있지만, 자동 복귀
 mission에서는 직접 발행하면 게이트를 우회하므로 금지합니다.
 
-실차 EKF(`robot_localization`)와 저장 지도 기반 AMCL bringup은 아직 제공하지
-않습니다.
+`robot_localization` 기반 EKF가 `use_ekf:=true`(기본값)일 때 `odom -> base_link`를
+발행하며, `false`이면 `drive_bridge`가 대신 발행합니다. 저장 지도 기반 AMCL bringup은
+아직 제공하지 않습니다.
 
 ## 시뮬레이션 실행
 
@@ -382,8 +386,13 @@ bash -n scripts/raspberry_pi/*.sh
   수행하십시오.
 - 시뮬레이션 launch와 `s2m_onboard_bridge.launch.py`를 동시에 실행하지 마십시오.
   `/odom`, `/imu/data`, `/cmd_vel`과 `odom -> base_link` TF가 모두 충돌합니다.
-- `robot_localization`을 도입하면 `drive_bridge`의 `publish_tf`를 `false`로 바꾸어
-  `odom -> base_link` 발행 주체를 하나로 유지하십시오.
+- `drive_bridge`의 `publish_tf`는 `s2m_onboard_bridge.launch.py`가 `use_ekf` 값에 따라
+  자동으로 켜고 끄므로, `odom -> base_link`를 두 노드가 동시에 발행하는 일은 없습니다.
+  수동으로 바꿀 필요는 없습니다.
 
 구현 상태와 실차 검증 순서는 [통합 문서](docs/integration/README.md)에 정리되어 있습니다.
-이번 통합 변경은 [릴리스 노트](RELEASE_NOTES.md)에서 확인할 수 있습니다.
+변경 이력은 [릴리스 노트](RELEASE_NOTES.md)에서 확인할 수 있습니다.
+
+## 라이선스
+
+[Apache License 2.0](LICENSE)
