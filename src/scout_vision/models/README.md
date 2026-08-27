@@ -8,12 +8,22 @@ COMS AU142 USB 웹캠 영상에서 위험/구조 관련 객체를 검출한다.
 | 버전 | 클래스 구성 | 상태 | 비고 |
 |---|---|---|---|
 | v1 (`train_local.py`) | 6종 — `fire`와 `smoke` 분리 | 폐기 | 성능 부족으로 v2로 대체 |
-| v2 (`train_local_v2.py`) | 5종 — `fire`/`smoke`를 `fire_smoke`로 통합 | **채택, 배포** | 아래 "기본 제공 모델"이 이 버전 |
+| v2 (`train_local_v2.py`) | 5종 — `fire`/`smoke`를 `fire_smoke`로 통합 | 폐기(성능 부족) | `fire_smoke` recall 0.21로 낮아 v3로 대체 |
+| v3 (`train_local_v3.py`) | 5종 — v2와 동일, `fire-and-person-detection.zip`만 제외 | **배포 후보, ONNX 인수 대기** | confusion matrix 기준 지금까지 최고 성능 (아래 "v3 실험 기록") |
 
-배포 대상은 v2이며, 이 문서의 "파일 목록" 이하는 전부 v2 기준이다. v1은
-왜 통합 결정을 내렸는지 근거를 남기기 위해 학습 스크립트와 결과를 함께
-기록해 둔다(아래 "v1 실험 기록" 참고). v1의 가중치/ONNX 파일 자체는
-저장소에 포함하지 않는다.
+> **참고:** 애초 계획은 v3에서 `fire`/`smoke`를 다시 분리하는 것이었지만,
+> 실제로 받은 `train_local_v3.py`는 클래스 구성을 5종(`fire_smoke` 통합)
+> 그대로 두고 `fire-and-person-detection.zip`만 데이터에서 뺀 버전이다.
+> 아래 "v3 실험 기록"은 이 실제 스크립트 기준으로 작성했다.
+
+아래 "파일 목록"·"기본 제공 모델"은 아직 실제 저장소에 들어 있는 v2
+파일(`s2m_vAI_lite_640_v2.onnx` 등) 기준이다. v3가 confusion matrix
+상으로는 더 낫지만, v3의 ONNX/labels 산출물 자체(`s2m_vAI_lite_640_v3.onnx`
+등)는 아직 전달받지 못했다 — 파일이 오는 대로 이 섹션을 v3 기준으로
+교체한다. v1·v2의 실험 기록은 이 결정의 근거를 남기기 위해 학습
+스크립트·결과와 함께 보관한다(아래 "v1 실험 기록", "v2 실험 기록",
+"v3 실험 기록" 참고). v1·v2의 가중치/ONNX 파일 자체는 저장소에 포함하지
+않는다.
 
 ## 파일 목록
 
@@ -229,29 +239,126 @@ confusion matrix가 보여주는 실패 모드는 "클래스 간 혼동"이 아�
 v2에서 `fire`와 `smoke`를 `fire_smoke`로 합친 결정은 이 진단과도 맞는다.
 클래스를 하나로 합치면 같은 학습 인스턴스 수로 더 많은(중복 라벨링된)
 샘플을 모아 confidence를 끌어올릴 수 있고, NMS 단계에서 fire·smoke가
-서로를 억제하는 문제도 사라진다. 다만 이 통합은 fire와 smoke를 이벤트
-단계에서 구분해야 할 필요(예: 화염만 있고 연기는 없는 초기 단계 감지)가
-생기면 다시 갈라야 하는데, 그때는 클래스를 나누기 전에 먼저 (a) 라벨
-경계 일관성 검수, (b) v2 수준의 증강 적용, (c) 가능하면 fire-only /
-smoke-only로 촬영된 단일 도메인 데이터 확보부터 해야 v1과 같은 실패를
-반복하지 않는다.
+서로를 억제하는 문제도 사라진다.
+
+다만 실제로 v2를 학습해서 확인해 보니 통합만으로는 이 문제가 완전히
+풀리지 않았다 — 아래 "v2 실험 기록" 참고. 그 결과를 바탕으로 다시
+`fire`/`smoke`를 분리하되(v3), 이번엔 원인 후보로 지목했던 데이터셋
+하나를 빼고 재시도하기로 했다.
+
+## v2 실험 기록 — 통합 후에도 남은 문제, 그리고 재분리(v3) 결정
+
+v2 배포 후 validation confusion matrix를 다시 뽑아 확인했다.
+`models/v2_confusion_matrix.png`로 함께 보관한다.
+
+| True 클래스 | 맞게 예측 | background로 놓침(미검출) | background가 이 클래스로 오검출된 비율 |
+|---|---|---|---|
+| `person` | 0.73 | 0.27 | 0.21 |
+| `fire_smoke` | **0.21** | **0.79** | **0.56** |
+| `exit_indicator` | 0.96 | 0.04 | 0.02 |
+| `gas_tank` | 0.93 | 0.07 | 0.17 |
+| `fire_extinguisher` | 0.93 | 0.07 | 0.04 |
+
+두 가지가 눈에 띈다.
+
+첫째, **`fire_smoke` recall이 0.21로, v1에서 개별 클래스였던 fire(0.23)/
+smoke(0.19)와 사실상 같다.** 클래스를 합치면 인스턴스 수가 늘어나
+confidence가 올라갈 거라는 가설은 맞지 않았다 — 여전히 79%가
+background로 놓쳐진다. 즉 앞서 정리한 5가지 원인(라벨 경계 불명확,
+fire/smoke 동시 등장으로 인한 NMS 억제, 이종 데이터셋 혼합, 약한 증강,
+큰 스케일 편차) 중 적어도 일부는 클래스 통합으로는 해소되지 않는
+문제였다는 뜻이다.
+
+둘째, **v1에서는 보지 못했던 새로운 문제가 나왔다.** `fire_smoke`는
+실제로는 background인 장면의 **56%를 fire_smoke로 오검출**한다(다른
+클래스는 전부 2~21%). 즉 v2의 `fire_smoke`는 놓치기도 잘 놓치고(recall
+0.21), 아닌데 있다고도 잘 우긴다(background 오검출 0.56) — recall과
+precision 양쪽 다 불안정한 상태다. 이 조합은 애매한 라벨 경계나 낮은
+confidence만으로는 잘 설명되지 않고, **학습 데이터 자체에 fire_smoke가
+아닌 장면이 fire_smoke로 라벨링된 오염된 샘플이 섞여 있을 가능성**을
+더 강하게 시사한다.
+
+v1 분석에서 이미 지목했던 원인 3번(출처가 다른 두 데이터셋 혼합)을
+다시 보면, `fire-and-person-detection.zip`은 카테고리명에 `smoke`
+문자열이 있는지만으로 `fire`/`smoke`를 가르는 휴리스틱 매핑을 쓴다
+(`train_local.py`/`train_local_v2.py` 공통). 이 데이터셋 자체가
+원래 fire/smoke 검출용이 아니라 "화재+사람"을 함께 다루는 데이터셋이라,
+매핑 과정에서 실제로는 애매하거나 배경에 가까운 장면이 `fire_smoke`로
+잘못 들어갔을 가능성이 `fire-smoke-detection.zip`(전용 데이터셋, 전체를
+그대로 매핑)보다 높다. background 오검출 0.56이라는 수치는 이 가설과
+방향이 일치한다.
+
+그래서 v3에서는 `fire-and-person-detection.zip`을 학습 데이터에서
+제외하고 `fire-smoke-detection.zip` 단일 출처로만 `fire_smoke`를
+학습해 보기로 했다. 클래스는 다시 나누지 않고 5종 통합을 그대로 두어,
+"데이터셋 제외" 하나만 바꿔서 그 효과를 단독으로 확인하는 실험이다.
+결과는 아래 "v3 실험 기록" 참고.
+
+## v3 실험 기록 — `fire-and-person-detection.zip` 제외 후 결과
+
+`train_local_v3.py`는 v2와 클래스 구성(5종, `fire_smoke` 통합)은
+동일하고, `ZIP_FILES`/`DATASET_RULES`에서 `fire-and-person-detection.zip`
+한 항목만 뺐다. 나머지 학습 설정(epoch, augmentation 등)은 v2와 같다.
+학습 후 validation confusion matrix는 `models/v3_confusion_matrix.png`로
+함께 보관한다.
+
+| True 클래스 | 맞게 예측 | background로 놓침(미검출) | background가 이 클래스로 오검출된 비율 |
+|---|---|---|---|
+| `person` | 0.90 | 0.10 | 0.07 |
+| `fire_smoke` | **0.56** | **0.44** | 0.55 |
+| `exit_indicator` | 0.94 | 0.06 | 0.02 |
+| `gas_tank` | 0.92 | 0.08 | 0.26 |
+| `fire_extinguisher` | 0.92 | 0.07 | 0.10 |
+
+### fire_smoke recall 변화 (v1 → v2 → v3)
+
+| 버전 | 클래스 구성 | fire/smoke recall |
+|---|---|---|
+| v1 | 분리 | `fire` 0.23 / `smoke` 0.19 |
+| v2 | 통합(`fire_smoke`), 6개 데이터셋 전부 사용 | 0.21 |
+| v3 | 통합(`fire_smoke`), `fire-and-person-detection.zip` 제외 | **0.56** |
+
+`fire-and-person-detection.zip` 하나를 뺐을 뿐인데 recall이 0.21 →
+0.56으로 뛰었다 — v2 분석에서 이 데이터셋을 원인으로 지목했던 가설이
+맞았다는 뜻이다. 흥미롭게도 `person` recall도 0.73 → 0.90으로 함께
+올랐는데, `fire-and-person-detection.zip`이 카테고리명 휴리스틱으로
+`person`도 같이 매핑하던 출처였으므로, 이 데이터셋이 `fire_smoke`뿐
+아니라 `person` 라벨의 일관성도 깎고 있었던 것으로 보인다.
+
+다만 완전히 해결된 건 아니다. `fire_smoke`는 여전히 다른 클래스
+(exit_indicator/gas_tank/fire_extinguisher 0.92~0.94)보다 recall이
+낮고(0.56), background 오검출률도 0.55로 v2(0.56)와 거의 그대로다 —
+놓치는 비율은 크게 줄었지만 "아닌데 있다고 우기는" 문제는 남아 있다.
+또한 `gas_tank`의 background 오검출률이 0.17 → 0.26으로 오히려
+늘었는데, 데이터셋 하나를 빼면서 전체 학습 데이터 분포·배치 구성이
+바뀐 부수 효과로 보이며 원인은 별도로 확인이 필요하다.
+
+종합하면 v3는 지금까지 세 버전 중 `fire_smoke` 성능이 가장 좋아
+배포 후보로 삼을 만하지만, (a) 여전히 44%는 놓치고 55%는 배경에서
+오검출한다는 점, (b) gas_tank 오검출이 늘어난 부수 효과가 남아 있다는
+점은 실기기 검증 전에 감안해야 한다. ONNX/labels 산출물이 도착하면
+이 카드의 "파일 목록"부터 v3로 교체한다.
 
 ## 재학습
 
 학습 스크립트는 이 저장소가 아니라 별도 학습 환경(GPU 머신)에서 실행한다.
-원본 zip 6개를 `Scout2map-Dataset/` 아래 두고 `train_local_v2.py`(v2, 배포용)를
-실행하면 `workspace/runs_2/scout_disaster_v2/weights/`에 `best.pt`와 두 ONNX가,
-`workspace/`에 라벨 파일이 생성된다. 결과물 3개(640 onnx, 320 onnx, labels)를
-이 폴더에 복사해 넣고 커밋하면 된다.
+원본 zip을 `Scout2map-Dataset/` 아래 두고 `train_local_v3.py`(v3, 현재
+배포 후보)를 실행하면 `workspace/runs_3/scout_disaster_v3/weights/`에
+`best.pt`와 두 ONNX(`s2m_vAI_lite_640_v3.onnx`, `s2m_vAI_lite_320_v3.onnx`)가,
+`workspace/`에 라벨 파일(`s2m_vAI_lite_labels_v3.txt`)이 생성된다. 결과물
+3개를 이 폴더에 복사해 넣고 커밋하면 된다. v3는 `fire-and-person-detection.zip`
+을 쓰지 않으므로 `Scout2map-Dataset/`에 그 zip이 없어도(또는 있어도 무시됨)
+실행된다.
 
-`train_local.py`(v1, fire/smoke 분리)는 위 실험 기록을 재현하거나 다시 분리
-학습을 시도할 때만 참고한다. 결과물 경로가 `workspace/runs/scout_disaster_multi/`
-로 v2와 다르고, 파일명에도 버전 접미사가 없다(`s2m_vAI_lite_640.onnx` 등) —
-두 스크립트를 같은 `workspace/`에서 연달아 돌려도 서로 덮어쓰지 않는다.
+`train_local.py`(v1, fire/smoke 분리)와 `train_local_v2.py`(v2, 6개 데이터셋
+전부 사용)는 위 실험 기록을 재현하거나 비교할 때만 참고한다. 세 스크립트는
+`MERGED_DIR`(`merged_dataset`/`merged_dataset_2`/`merged_dataset_3`)와
+`project`(`runs`/`runs_2`/`runs_3`), 출력 파일명(버전 접미사 유무·`_v2`/`_v3`)이
+모두 달라 같은 `workspace/`에서 연달아 돌려도 서로 덮어쓰지 않는다.
 
 ### 학습 스크립트 자체는 어디에 두나
 
-`models/`는 ONNX 산출물 전용으로 두고, 학습 스크립트와 v1 실험 로그는 옆에
+`models/`는 ONNX 산출물 전용으로 두고, 학습 스크립트와 실험 로그는 옆에
 `training/` 폴더를 새로 만들어 넣는 걸 추천한다.
 
 ```
@@ -259,9 +366,13 @@ src/scout_vision/
 ├── models/                     ← 배포용 ONNX + 라벨 + 이 카드
 └── training/                   ← 학습 재현용 (colcon 빌드/설치 대상 아님)
     ├── train_local.py          # v1, fire/smoke 분리 (참고용, 폐기됨)
-    ├── train_local_v2.py       # v2, 배포 모델을 만드는 스크립트
+    ├── train_local_v2.py       # v2, 6개 데이터셋 전부 사용 (참고용, 폐기됨)
+    ├── train_local_v3.py       # v3, fire-and-person-detection.zip 제외 (현재 배포 후보)
     └── v1_results.csv          # v1 학습 곡선 원본 (위 표의 출처)
 ```
+
+`v1_confusion_matrix.png`, `v2_confusion_matrix.png`, `v3_confusion_matrix.png`는
+`models/`에 함께 보관해 두어 각 버전의 실험 기록과 나란히 확인할 수 있게 한다.
 
 `training/`은 ROS2 패키지 빌드 산출물이 아니라 순수 참고 자료이므로
 `setup.py`의 `data_files`에 넣을 필요가 없다 — git에 소스로만 존재하면
