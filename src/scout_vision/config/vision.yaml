@@ -21,3 +21,12 @@ scout_vision:
     nms_threshold: 0.45
     max_fps: 5.0
     frame_timeout_s: 2.0
+
+    # Small crop of each detection's box (JPEG+base64 over /vision/snapshots)
+    # so scout2map_event can attach a thumbnail to the event and a human can
+    # visually confirm a hazard from the web dashboard.
+    snapshot_enabled: true
+    snapshot_topic: "/vision/snapshots"
+    snapshot_max_size: 128
+    snapshot_jpeg_quality: 60
+    snapshot_margin_ratio: 0.15

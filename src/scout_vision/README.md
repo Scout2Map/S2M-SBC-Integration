@@ -29,12 +29,37 @@ COMS AU142 USB 웹캠의 ROS 이미지를 YOLOv8 형식 ONNX 모델로 추론하
 |---|---|---|
 | 구독 | `/camera/image_raw` | `sensor_msgs/Image` |
 | 발행 | `/vision/detections` | `vision_msgs/Detection2DArray` |
+| 발행 | `/vision/snapshots` | `std_msgs/String` (JSON) |
 | 발행 | `/vision/info` | `vision_msgs/VisionInfo` |
 | 발행 | `/diagnostics` | `diagnostic_msgs/DiagnosticArray` |
 
 카메라 timestamp와 frame ID는 검출 메시지에 그대로 유지된다. Event Engine은 이
 시각의 `map <- base_link` TF를 조회한다. depth가 없으므로 지도 마커는 객체 위치가
 아니라 **촬영 당시 로봇 위치**다.
+
+### 감지 스냅샷 (`/vision/snapshots`)
+
+한 프레임에 감지가 하나라도 있으면, 각 감지의 bbox를 여백 포함해서 잘라내
+(기본 마진 15%) 작게 리사이즈(기본 최대 128px)하고 JPEG로 압축(기본
+quality 60)한 뒤 base64로 인코딩해서 이 토픽에 발행한다.
+
+```json
+{
+  "stamp_sec": 1234, "stamp_nanosec": 5678, "frame_id": "camera_optical_frame",
+  "snapshots": [
+    { "detection_id": "42:0", "class_id": "person_in_danger", "jpeg_b64": "..." }
+  ]
+}
+```
+
+`detection_id`는 `/vision/detections`의 `Detection2D.id`(`{sequence}:{index}`)와
+같은 값이라, `scout2map_event`가 이벤트를 만들 때 같은 id로 스냅샷을 찾아
+`/events`의 `extra.snapshot_jpeg_b64`에 그대로 실어보낼 수 있다. 관제 화면에서
+"진짜 위험이 맞는지" 사람이 눈으로 확인할 수 있게 해주는 용도로, 특히
+`person_in_danger`/`fire`처럼 오탐 비용이 큰 클래스에서 중요하다.
+
+Pi 5 부하가 문제라면 `snapshot_enabled:=false`로 끌 수 있다 — 꺼도
+`class_id`/`confidence` 기반 이벤트 자체는 그대로 동작하고, 썸네일만 빠진다.
 
 ## 실행
 

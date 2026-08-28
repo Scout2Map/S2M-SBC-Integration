@@ -2,6 +2,7 @@
 
 from collections import deque
 import hashlib
+import json
 from pathlib import Path
 import time
 
@@ -16,8 +17,10 @@ from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
 )
+from scout_vision.snapshot import encode_snapshot_jpeg
 from scout_vision.yolo import decode_yolov8, prepare_input
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 from vision_msgs.msg import (
     Detection2D,
     Detection2DArray,
@@ -44,6 +47,18 @@ class VisionNode(Node):
         self.declare_parameter('max_fps', 5.0)
         self.declare_parameter('frame_timeout_s', 2.0)
 
+        # Small crop of each detection's bounding box, JPEG+base64 in a JSON
+        # side topic, so a human can visually confirm a hazard without SSH-ing
+        # into the robot. Off by default is not an option here - a wrongly
+        # confirmed 'person_in_danger' with no way to check the frame is
+        # worse than the extra CPU cost, so this defaults to enabled and only
+        # runs when a frame actually has detections to crop.
+        self.declare_parameter('snapshot_enabled', True)
+        self.declare_parameter('snapshot_topic', '/vision/snapshots')
+        self.declare_parameter('snapshot_max_size', 128)
+        self.declare_parameter('snapshot_jpeg_quality', 60)
+        self.declare_parameter('snapshot_margin_ratio', 0.15)
+
         gp = self.get_parameter
         self._input_width = int(gp('input_width').value)
         self._input_height = int(gp('input_height').value)
@@ -52,6 +67,11 @@ class VisionNode(Node):
         max_fps = float(gp('max_fps').value)
         self._minimum_period = 1.0 / max_fps if max_fps > 0 else 0.0
         self._frame_timeout = max(0.1, float(gp('frame_timeout_s').value))
+
+        self._snapshot_enabled = bool(gp('snapshot_enabled').value)
+        self._snapshot_max_size = int(gp('snapshot_max_size').value)
+        self._snapshot_jpeg_quality = int(gp('snapshot_jpeg_quality').value)
+        self._snapshot_margin_ratio = float(gp('snapshot_margin_ratio').value)
 
         self._bridge = CvBridge()
         self._net = None
@@ -81,6 +101,11 @@ class VisionNode(Node):
             VisionInfo,
             str(gp('vision_info_topic').value),
             info_qos,
+        )
+        self._snapshot_pub = self.create_publisher(
+            String,
+            str(gp('snapshot_topic').value),
+            10,
         )
 
         self._load_model(
@@ -181,12 +206,51 @@ class VisionNode(Node):
                 detection.results.append(hypothesis)
                 output.detections.append(detection)
             self._detections_pub.publish(output)
+            if self._snapshot_enabled and detections:
+                self._publish_snapshots(image, message.header, detections)
             self._inference_error = ''
             self._latencies_ms.append(
                 (time.perf_counter() - started) * 1000.0)
         except (ValueError, cv2.error, CvBridgeError, TypeError) as exc:
             self._inference_error = str(exc)
             self.get_logger().error(f'vision inference failed: {exc}')
+
+    def _publish_snapshots(self, image, header, detections):
+        """Crop+encode each detection's box and publish them as one frame.
+
+        detection_id here must match the id scheme used when building the
+        Detection2DArray above (f'{sequence}:{index}') so scout2map_event can
+        correlate a snapshot with the detection it belongs to. A crop that
+        fails to encode (degenerate box) is just skipped, not fatal to the
+        rest of the frame.
+        """
+        snapshots = []
+        for index, item in enumerate(detections):
+            jpeg_b64 = encode_snapshot_jpeg(
+                image,
+                item['box'],
+                max_size=self._snapshot_max_size,
+                jpeg_quality=self._snapshot_jpeg_quality,
+                margin_ratio=self._snapshot_margin_ratio,
+            )
+            if jpeg_b64 is None:
+                continue
+            snapshots.append({
+                'detection_id': f'{self._sequence}:{index}',
+                'class_id': item['class_id'],
+                'jpeg_b64': jpeg_b64,
+            })
+
+        if not snapshots:
+            return
+
+        payload = {
+            'stamp_sec': header.stamp.sec,
+            'stamp_nanosec': header.stamp.nanosec,
+            'frame_id': header.frame_id,
+            'snapshots': snapshots,
+        }
+        self._snapshot_pub.publish(String(data=json.dumps(payload)))
 
     def _publish_diagnostics(self):
         now = time.monotonic()
