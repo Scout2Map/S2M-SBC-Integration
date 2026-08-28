@@ -14,31 +14,41 @@ COMS AU142 USB 웹캠 영상에서 위험/구조 관련 객체를 검출한다.
 | v5 (`train_local_v5.py`) | 5종 — v2와 동일, `fire-smoke-detection.zip`만 제외 | 폐기(실패, 대조군) | `fire_smoke` recall 0.11로 급락 — 반대 실험으로 v3/v4 가설 검증용 |
 | v6 | (스크립트 미보관) | 폐기 | 데이터셋 잘못 선정해서 폐기 — 세부 실험 기록 없음 |
 | v7 (`train_local_v7.py`) | 7종 — v4 + `person_in_danger` 신설, 소화기 데이터셋 추가 | 폐기(v8이 이 체크포인트에서 fine-tuning) | confusion matrix 미전달 — 아래 "v7 실험 기록" |
-| v8 (`train_local_v8.py`) | 7종 — v7과 동일 구성, v7 가중치에서 fine-tuning + 증강 강화 | **최종, 배포 중 (640/320 모두)** | `fire` 0.67 / `smoke` 0.52 recall, 아래 "v8 실험 기록" |
+| v8 (`train_local_v8.py`) | 7종 — v7과 동일 구성, v7 가중치에서 fine-tuning + 증강 강화 | 폐기(v9로 대체) | `fire` 0.67 / `smoke` 0.52 recall, 아래 "v8 실험 기록" |
+| v9 | 7종 — v8과 동일(라벨 순서 동일) | **최종, 배포 중 (640만)** | `fire` 0.68 / `smoke` 0.52 recall, `person` 오검출 미해결 — 아래 "v9 실험 기록" |
 
-> **최종 결론: v8이 최종 버전이고, 640/320 ONNX 둘 다 저장소에 반영
-> 완료됐다.** v6은 데이터셋을 잘못 골라 폐기됐고, v7에서 `person_in_danger`
-> 클래스를 새로 추가하고 소화기 데이터셋을 보강했다. v8은 v7의 결과
-> (`best.pt`)에서 이어받아 50 epoch만 추가로 fine-tuning하면서 증강을 더
-> 강하게 준 버전이며, 사용자가 최종본으로 지정했다. v1~v5의 실험 기록은
+> **최종 결론: v9이 최종 버전이다.** v6은 데이터셋을 잘못 골라 폐기됐고,
+> v7에서 `person_in_danger` 클래스를 새로 추가하고 소화기 데이터셋을
+> 보강했다. v8은 v7의 결과(`best.pt`)에서 이어받아 50 epoch만 추가로
+> fine-tuning하면서 증강을 더 강하게 준 버전이다. v9은 학습 스크립트를
+> 전달받지 못해 v8과 무엇이 달라졌는지 정확히는 알 수 없지만, 사용자가
+> 최종본으로 지정했고 confusion matrix 수치도 v8과 거의 동일하다(아래
+> "v9 실험 기록" 참고) — **다만 v8에서 지적했던 `person`의 background
+> 오검출 0.63~0.64는 v9에서도 그대로 남아 있다.** v1~v5의 실험 기록은
 > 지금의 데이터셋 구성(예: `fire-and-person-detection.zip` 제외)이 나온
 > 배경을 남기기 위해 그대로 보관한다.
+>
+> v7→v8 fine-tuning 관계(`workspace/runs_7/scout_disaster_v7/weights/best.pt`
+> 경로 일치)는 이전과 같이 유효하다(아래 "v7 실험 기록" 참고). v9은
+> 스크립트가 없어 v8에서 이어받았는지 새로 학습했는지 확인할 수 없다.
 
 ## 파일 목록
 
 | 파일 | 용도 | 상태 |
 |---|---|---|
-| `s2m_vAI_lite_640_v8.onnx` | 기본 모델. 입력 640x640, 정확도 우선 | **저장소 반영, 검증 완료** |
-| `s2m_vAI_lite_320_v8.onnx` | 저전력 대안. 입력 320x320, Pi 5 부하가 문제될 때만 사용 | **저장소 반영, 검증 완료** |
-| `s2m_vAI_lite_labels_v8.txt` | 클래스 라벨 (7줄, 모델 출력 순서와 동일) | **저장소 반영, 검증 완료** |
+| `s2m_vAI_lite_640_v9.onnx` | 기본 모델. 입력 640x640, 정확도 우선 | **저장소 반영, 검증 완료** |
+| `s2m_vAI_lite_320_v9.onnx` | 저전력 대안. 입력 320x320 | 미전달 — 오는 대로 추가(v8의 320은 v9 가중치와 다르므로 대신 쓰지 않는다) |
+| `s2m_vAI_lite_labels_v9.txt` | 클래스 라벨 (7줄, 모델 출력 순서와 동일) | **저장소 반영, 검증 완료** |
 
-두 ONNX 모두 로드해서 직접 확인했다: 640은 입력 `images` shape
-`[1, 3, 640, 640]`(고정), 출력 `output0` shape `[1, 11, 8400]`(= 4 + 7클래스,
-`[1, 4+classes, boxes]` 계약과 일치); 320은 입력 `[1, 3, 320, 320]`, 출력
-`[1, 11, 2100]`. 둘 다 opset 12, `dynamic=False` 확인, `cv2.dnn.readNetFromONNX()`로
+640 ONNX를 로드해서 직접 확인했다: 입력 `images` shape `[1, 3, 640, 640]`
+(고정), 출력 `output0` shape `[1, 11, 8400]`(= 4 + 7클래스, `[1, 4+classes, boxes]`
+계약과 일치), opset 12, `dynamic=False` 확인, `cv2.dnn.readNetFromONNX()`로
 정상 로드된다. `labels_path`의 7줄(`person`, `person_in_danger`, `fire`,
 `smoke`, `exit_indicator`, `gas_tank`, `fire_extinguisher`)도 아래
-"클래스 (7종)" 순서와 일치한다.
+"클래스 (7종)" 순서와 일치한다. **320 ONNX는 이번에 전달받지 못했다** —
+Pi 5 저전력 옵션이 필요하면 v8의 320 파일을 임시로 쓰기보다는(가중치가
+다른 모델이라 640과 클래스별 특성이 어긋날 수 있다) v9의 320이 도착할
+때까지 640으로만 운용하는 걸 권장한다.
 
 ## 클래스 (7종)
 
@@ -52,11 +62,12 @@ COMS AU142 USB 웹캠 영상에서 위험/구조 관련 객체를 검출한다.
 6 fire_extinguisher
 ```
 
-v4까지는 6종이었는데, v8에서 `person_in_danger`가 새로 추가돼 7종이 됐다.
-`person`과 `person_in_danger`를 별도 클래스로 구분해 학습했으므로, 이벤트
-엔진 쪽에서 "단순히 사람이 보임"과 "위험에 처한 사람"을 구분해서 처리할 수
-있다 — 다만 이 구분 기준(자세, 주변 화재/연기와의 근접도 등 무엇으로
-`person_in_danger`를 라벨링했는지)은 `train_local_v8.py`에는 나와 있지
+v4까지는 6종이었는데, v7에서 `person_in_danger`가 새로 추가돼 7종이 됐고
+v8·v9도 이어받았다. `person`과 `person_in_danger`를 별도 클래스로 구분해
+학습했으므로, 이벤트 엔진 쪽에서 "단순히 사람이 보임"과 "위험에 처한
+사람"을 구분해서 처리할 수 있다 — 다만 이 구분 기준(자세, 주변 화재/연기와의
+근접도 등 무엇으로 `person_in_danger`를 라벨링했는지)은 `train_local_v7.py`/
+`train_local_v8.py`에는 나와 있지
 않으므로, 실제 이벤트 로직에서 이 클래스를 쓰기 전에 라벨링 기준을 한 번
 더 확인하는 게 좋다.
 
@@ -142,22 +153,22 @@ letterbox 단계에서 이미지 크기가 달라져 조용히 오검출이 늘�
 
 ## 성능 / 검증 상태
 
-640/320 ONNX 둘 다 파일 구조를 검증했다 — 각각 입력 `[1, 3, 640, 640]` /
-`[1, 3, 320, 320]` 고정, 출력 `[1, 11, 8400]` / `[1, 11, 2100]`, opset 12,
-`cv2.dnn.readNetFromONNX()` 로드 성공(위 "파일 목록" 참고). **아직 COMS
-AU142 실기기에서의 정확도·FPS·지연 측정은 하지 않았다.** 파이프라인 배선
-(카메라 → 추론 → `/vision/detections` → Event Engine → `/events`)까지는
+640 ONNX는 파일 구조를 검증했다 — 입력 `[1, 3, 640, 640]` 고정, 출력
+`[1, 11, 8400]`, opset 12, `cv2.dnn.readNetFromONNX()` 로드 성공(위 "파일
+목록" 참고). 320은 v9으로 아직 전달받지 못해 검증 대상이 없다. **아직
+COMS AU142 실기기에서의 정확도·FPS·지연 측정은 하지 않았다.** 파이프라인
+배선(카메라 → 추론 → `/vision/detections` → Event Engine → `/events`)까지는
 `S2M-Event-Engine`, `S2M-SBC-Integration` 양쪽에서 확인되었으나, 이 가중치의
 실측 mAP나 Pi 5 위에서의 p50/p95 지연은 별도로 측정해서 이 문서에 채워
-넣어야 한다. 아래 "v8 실험 기록"의 confusion matrix는 학습 스크립트가 나눈
+넣어야 한다. 아래 "v9 실험 기록"의 confusion matrix는 학습 스크립트가 나눈
 자체 validation split 기준이며, COMS AU142로 찍은 실제 영상 성능과는 다를
-수 있다 — 특히 `person`의 background 오검출률(0.64, 아래 참고)은 실기기
-검증 전에 반드시 다시 봐야 한다.
+수 있다 — **특히 `person`의 background 오검출률(0.63, v8의 0.64에서
+거의 그대로)은 실기기 검증 전에 반드시 다시 봐야 한다.**
 
 ```
 정확도 (mAP50-95): 미측정
 640 모델 추론 지연 (Pi 5, cv2.dnn): 미측정
-320 모델 추론 지연 (Pi 5, cv2.dnn): 미측정
+320 모델 추론 지연 (Pi 5, cv2.dnn): 320 ONNX 미전달로 측정 불가
 ```
 
 ## 사용 방법
@@ -168,23 +179,21 @@ AU142 실기기에서의 정확도·FPS·지연 측정은 하지 않았다.** �
 
 ```bash
 ros2 launch scout_vision vision.launch.py \
-  model_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_640_v8.onnx \
-  labels_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_labels_v8.txt
+  model_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_640_v9.onnx \
+  labels_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_labels_v9.txt
 ```
 
-Pi 5 부하가 문제일 때(SLAM + Nav2 + Event Engine과 동시 구동 시 프레임이 밀리는
-경우)만 320 모델로 교체한다. 이때는 `input_width`/`input_height`도 320으로 같이
-바꿔야 한다.
+위 명령은 실제로 저장소에 반영된 v9 640 파일 기준이라 지금 바로 실행할 수
+있다. **320 모델은 v9으로 아직 전달받지 못해 저장소에 없다** — Pi 5 부하가
+문제여도 지금은 640 그대로 두고 카메라 FPS를 낮추는 임시 방편을 쓰거나,
+v9 320이 도착할 때까지 기다리는 걸 권장한다(위 "파일 목록" 참고).
 
 ```bash
 ros2 launch scout_vision vision.launch.py \
-  model_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_320_v8.onnx \
-  labels_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_labels_v8.txt \
+  model_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_320_v9.onnx \
+  labels_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_labels_v9.txt \
   --ros-args -p input_width:=320 -p input_height:=320
 ```
-
-위 두 명령 모두 실제로 저장소에 반영된 v8 파일 기준이라 지금 바로 실행할
-수 있다.
 
 ## v1 실험 기록 — fire/smoke 분리 학습, 왜 통합했는가
 
@@ -552,11 +561,65 @@ detection에 한해 별도 후처리(예: 연속 프레임 검증)를 추가하�
 
 ### 종합
 
-지금까지 나온 8개 버전(v1~v5, v7, v8 — v6은 기록 없음) 중 `fire`/`smoke`
-계열 recall과 background 오검출률을 종합하면 v8이 가장 균형 잡힌
-버전이다. 다만 `person`의 background 오검출 급등은 이전 버전에는 없던
-새로운 리스크이므로, "v8이 최종"이라는 결정과는 별개로 이 부분만큼은
-실기기 검증 결과를 보고 필요하면 추가 조치를 해야 한다.
+v8 시점까지는 지금까지 나온 8개 버전(v1~v5, v7, v8 — v6은 기록 없음) 중
+가장 균형 잡힌 버전이었다. 다만 `person`의 background 오검출 급등은
+이전 버전에는 없던 새로운 리스크로 남았다 — 아래 "v9 실험 기록"에서
+이어서 확인한다.
+
+## v9 실험 기록 — v8과 거의 동일, `person` 오검출 미해결
+
+v9은 학습 스크립트를 전달받지 못해 v8과 정확히 무엇이 달라졌는지는
+확인할 수 없다. 라벨 순서(`person`, `person_in_danger`, `fire`, `smoke`,
+`exit_indicator`, `gas_tank`, `fire_extinguisher`)는 v8과 동일하고, 640
+ONNX만 전달받았다(320 없음). confusion matrix는 `models/v9_confusion_matrix.png`로
+보관한다.
+
+| True 클래스 | 맞게 예측 | background로 놓침(미검출) | 기타 오분류 | background가 이 클래스로 오검출된 비율 |
+|---|---|---|---|---|
+| `person` | 0.84 | 0.16 | 0 | **0.63** |
+| `person_in_danger` | **0.97** | 0.03 | 0 | ~0 |
+| `fire` | **0.68** | 0.32 | 0 | 0.25 |
+| `smoke` | 0.52 | 0.47 | 0.01(→`fire`) | 0.09 |
+| `exit_indicator` | 0.98 | 0.02 | 0 | 0.01 |
+| `gas_tank` | 0.93 | 0.07 | 0 | 0.02 |
+| `fire_extinguisher` | 0.92 | 0.08 | 0 | 0.01 |
+
+v8과 나란히 놓고 보면 거의 모든 수치가 소수점 한두 자리 안에서만
+움직인다.
+
+| 클래스 | v8 recall | v9 recall | v8 bg 오검출 | v9 bg 오검출 |
+|---|---|---|---|---|
+| `person` | 0.84 | 0.84 | 0.64 | 0.63 |
+| `person_in_danger` | 0.96 | 0.97 | 0.01 | ~0 |
+| `fire` | 0.67 | 0.68 | 0.23 | 0.25 |
+| `smoke` | 0.52 | 0.52 | 0.08 | 0.09 |
+| `exit_indicator` | 0.96 | 0.98 | 0.01 | 0.01 |
+| `gas_tank` | 0.92 | 0.93 | 0.02 | 0.02 |
+| `fire_extinguisher` | 0.91 | 0.92 | 0.01 | 0.01 |
+
+**가장 중요한 건 `person`의 background 오검출률이 0.64 → 0.63으로
+사실상 그대로라는 점이다.** v8에서 지적했던 "실제 배경 장면의 64%를
+사람으로 오검출하는" 문제가 v9에서도 해결되지 않았다 — 다른 수치들이
+거의 다 미세하게 좋아진 것과 대조적이다. 스크립트가 없어 원인을 다시
+진단할 수는 없지만, 이 정도로 안 움직이는 걸 보면 (a) v8→v9 사이에
+`person`/`people.zip` 관련 데이터나 augmentation은 손대지 않았거나,
+(b) 손댔더라도 근본 원인(라벨링 방식, `copy_paste` 부작용, 혹은 이전에
+짚었던 `Yolo-disaster-relief.zip` 재혼입 가능성)이 그대로 남아 있을
+가능성이 크다.
+
+**v9을 최종으로 배포하더라도, `person`의 background 오검출 문제는 별도
+과제로 남겨둬야 한다.** 실기기 검증에서 재현되면 Event Engine 쪽
+confidence threshold 상향이나 연속 프레임 검증 같은 후처리로 완화하는
+방안을 v8 때와 동일하게 고려해볼 만하다.
+
+### 종합
+
+v1부터 v9까지의 흐름을 요약하면: fire/smoke 문제는 데이터셋 정제
+(`fire-and-person-detection.zip` 제외, v3~v4)와 데이터 보강+재분리(v7~v9)로
+꾸준히 개선돼 지금은 fire 0.68 / smoke 0.52 recall까지 왔다. 반면
+`person`의 background 오검출은 v8에서 처음 나타난 이후 v9까지 전혀
+개선되지 않은 유일한 리스크다. v9을 배포하는 것과는 별개로, 이 문제는
+후속 버전(v10 등)에서 반드시 짚고 넘어가야 할 항목으로 남겨둔다.
 
 ## 재학습
 
@@ -565,23 +628,60 @@ detection에 한해 별도 후처리(예: 연속 프레임 검증)를 추가하�
 아래 두고 v7을 100 epoch로 학습해 `workspace/runs_7/scout_disaster_v7/weights/best.pt`를
 만든 다음, 같은 `Scout2map-Dataset/`에서 `train_local_v8.py`를 실행하면
 이 `best.pt`를 이어받아 50 epoch fine-tuning 후
-`workspace/runs_8/scout_disaster_v8/weights/`에 최종 `best.pt`와 두
-ONNX(`s2m_vAI_lite_640_v8.onnx`, `s2m_vAI_lite_320_v8.onnx`)가, `workspace/`에
-라벨 파일(`s2m_vAI_lite_labels_v8.txt`)이 생성된다. 결과물 3개는 이미 이
-폴더에 반영·커밋 완료된 상태다. `workspace/runs_7/scout_disaster_v7/weights/best.pt`가
-없으면 v8은 `yolov8n.pt`부터 새로 학습되므로, 재현성이 중요하면 이 경로를
-의도적으로 비워 처음부터 학습하는 것도 방법이다(위 "학습 설정" 참고).
+`workspace/runs_8/scout_disaster_v8/weights/`에 `best.pt`와 두
+ONNX(`s2m_vAI_lite_640_v8.onnx`, `s2m_vAI_lite_320_v8.onnx`)가 생성된다.
+**v9의 학습 스크립트는 전달받지 못해, v8 이후 무엇을 더 했는지는 이
+문서만으로 재현할 수 없다** — v9의 `s2m_vAI_lite_640_v9.onnx`/
+`s2m_vAI_lite_labels_v9.txt`는 이미 이 폴더에 반영·커밋 완료된 상태이지만,
+`train_local_v9.py`가 확보되면 같이 보관해야 재현 가능한 상태가 된다.
+`workspace/runs_7/scout_disaster_v7/weights/best.pt`가 없으면 v8은
+`yolov8n.pt`부터 새로 학습되므로, 재현성이 중요하면 이 경로를 의도적으로
+비워 처음부터 학습하는 것도 방법이다(위 "학습 설정" 참고).
 
 `train_local.py`(v1), `train_local_v2.py`(v2), `train_local_v3.py`(v3),
-`train_local_v5.py`(v5)는 모두 폐기된 버전으로, 위 실험 기록을 재현하거나
-비교할 때만 참고한다. v6 스크립트는 전달받지 못해 저장소에 없다.
-각 스크립트는 `MERGED_DIR`(`merged_dataset`~`merged_dataset_5`,
-`merged_dataset_7`, `merged_dataset_8`)와 `project`(`runs`~`runs_5`,
-`runs_7`, `runs_8`), 출력 파일명(버전 접미사 `_v2`~`_v5`, `_v7`, `_v8`)이
-모두 달라 같은 `workspace/`에서 연달아 돌려도 서로 덮어쓰지 않는다 —
-다만 `EXTRACT_DIR`(`workspace/datasets/`)은 모든 버전이 공유하므로, 이
-폴더에 남아 있는 예전 압축 해제 결과가 다음 버전 학습에 의도치 않게
-재사용될 수 있다는 점은 감안해야 한다(위 "확인 필요" 참고).
+`train_local_v5.py`(v5), `train_local_v7.py`(v7), `train_local_v8.py`(v8)는
+모두 폐기된 버전으로, 위 실험 기록을 재현하거나 비교할 때만 참고한다.
+v6과 v9 스크립트는 전달받지 못해 저장소에 없다. 각 스크립트는
+`MERGED_DIR`(`merged_dataset`~`merged_dataset_5`, `merged_dataset_7`,
+`merged_dataset_8`)와 `project`(`runs`~`runs_5`, `runs_7`, `runs_8`),
+출력 파일명(버전 접미사 `_v2`~`_v5`, `_v7`, `_v8`)이 모두 달라 같은
+`workspace/`에서 연달아 돌려도 서로 덮어쓰지 않는다 — 다만
+`EXTRACT_DIR`(`workspace/datasets/`)은 모든 버전이 공유하므로, 이 폴더에
+남아 있는 예전 압축 해제 결과가 다음 버전 학습에 의도치 않게 재사용될
+수 있다는 점은 감안해야 한다(위 "확인 필요" 참고).
+
+### 학습 스크립트 자체는 어디에 두나
+
+`models/`는 ONNX 산출물 전용으로 두고, 학습 스크립트와 실험 로그는 옆에
+`training/` 폴더를 새로 만들어 넣는 걸 추천한다.
+
+```
+src/scout_vision/
+├── models/                     ← 배포용 ONNX + 라벨 + 이 카드
+└── training/                   ← 학습 재현용 (colcon 빌드/설치 대상 아님)
+    ├── train_local.py          # v1, fire/smoke 분리 (참고용, 폐기됨)
+    ├── train_local_v2.py       # v2, 6개 데이터셋 전부 사용 (참고용, 폐기됨)
+    ├── train_local_v3.py       # v3, fire-and-person-detection.zip 제외 (참고용, 폐기됨)
+    ├── train_local_v4.py       # v4, v3 + fire/smoke 재분리 (참고용, 폐기됨)
+    ├── train_local_v5.py       # v5, fire-smoke-detection.zip 제외 대조군 (참고용, 폐기됨)
+    ├── train_local_v7.py       # v7, person_in_danger 신설 + 소화기 데이터셋 추가 (참고용, 폐기 — v8의 base)
+    ├── train_local_v8.py       # v8, v7 가중치에서 fine-tuning + 증강 강화 (참고용, 폐기)
+    └── v1_results.csv          # v1 학습 곡선 원본 (위 표의 출처)
+```
+
+v6·v9 스크립트는 전달받지 못해 이 폴더에 없다 — v9(현재 배포 버전)의
+학습 스크립트가 없다는 게 재현성 관점에서 가장 아쉬운 공백이니, 나중에
+확보되면 `train_local_v9.py`로 꼭 같이 보관해 두는 걸 권장한다.
+`train_local_v6.py`도 확보되면 마찬가지다.
+
+`v1_confusion_matrix.png` ~ `v5_confusion_matrix.png`, `v8_confusion_matrix.png`,
+`v9_confusion_matrix.png`는 `models/`에 함께 보관해 두어 각 버전의 실험
+기록과 나란히 확인할 수 있게 한다(v6·v7은 confusion matrix 이미지를
+전달받지 못해 없음).
+
+`training/`은 ROS2 패키지 빌드 산출물이 아니라 순수 참고 자료이므로
+`setup.py`의 `data_files`에 넣을 필요가 없다 — git에 소스로만 존재하면
+충분하다(`colcon build`가 이 폴더를 건드리지 않는다).
 
 ## 이 폴더를 실제로 쓰려면 필요한 코드 변경 3곳
 
@@ -610,8 +710,8 @@ data_files=[
 ### 2. `launch/vision.launch.py` — 기본 경로를 패키지 공유 디렉토리 기준으로 계산
 
 ```python
-default_model = os.path.join(share, 'models', 's2m_vAI_lite_640_v8.onnx')
-default_labels = os.path.join(share, 'models', 's2m_vAI_lite_labels_v8.txt')
+default_model = os.path.join(share, 'models', 's2m_vAI_lite_640_v9.onnx')
+default_labels = os.path.join(share, 'models', 's2m_vAI_lite_labels_v9.txt')
 ...
 DeclareLaunchArgument('model_path', default_value=default_model),
 DeclareLaunchArgument('labels_path', default_value=default_labels),
@@ -628,8 +728,8 @@ DeclareLaunchArgument('labels_path', default_value=default_labels),
 이 폴더의 실제 파일명으로 바꿔 둔다.
 
 ```yaml
-model_path: "install/scout_vision/share/scout_vision/models/s2m_vAI_lite_640_v8.onnx"
-labels_path: "install/scout_vision/share/scout_vision/models/s2m_vAI_lite_labels_v8.txt"
+model_path: "install/scout_vision/share/scout_vision/models/s2m_vAI_lite_640_v9.onnx"
+labels_path: "install/scout_vision/share/scout_vision/models/s2m_vAI_lite_labels_v9.txt"
 ```
 
 세 곳을 다 고친 뒤 `colcon build --packages-select scout_vision`으로
