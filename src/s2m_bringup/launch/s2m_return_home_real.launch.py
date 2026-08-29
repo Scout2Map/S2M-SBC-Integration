@@ -6,6 +6,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -15,6 +16,7 @@ def generate_launch_description():
     bringup_share = get_package_share_directory('s2m_bringup')
     event_share = get_package_share_directory('scout2map_event')
     vision_share = get_package_share_directory('scout_vision')
+    comm_relay_share = get_package_share_directory('scout2map_comm')
 
     real_stack = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -56,6 +58,21 @@ def generate_launch_description():
         parameters=[params],
     )
 
+    # scout2map_comm was previously started by hand in a separate terminal
+    # (see comm-relay-plan-2026-08-24 project notes - bundling it here was
+    # always the intent, just never wired up). use_comm_relay defaults on so
+    # a plain `ros2 launch s2m_bringup s2m_return_home_real.launch.py`
+    # brings the web relay up with everything else.
+    comm_relay = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(comm_relay_share, 'launch', 'comm_relay.launch.py')
+        ),
+        launch_arguments={
+            'params_file': LaunchConfiguration('comm_relay_params'),
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('use_comm_relay')),
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument('use_bridges', default_value='true'),
         DeclareLaunchArgument('use_lidar', default_value='true'),
@@ -80,7 +97,13 @@ def generate_launch_description():
             'return_home_params',
             default_value=os.path.join(
                 bringup_share, 'config', 'return_home_real.yaml')),
+        DeclareLaunchArgument('use_comm_relay', default_value='true'),
+        DeclareLaunchArgument(
+            'comm_relay_params',
+            default_value=os.path.join(
+                comm_relay_share, 'config', 'comm_relay.yaml')),
         real_stack,
         safety_gate,
         return_home,
+        comm_relay,
     ])

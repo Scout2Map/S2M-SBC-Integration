@@ -177,6 +177,12 @@ ros2 launch s2m_bringup s2m_return_home_real.launch.py \
   map_id:=mapping_20260818 use_rviz:=true
 ```
 
+이 launch는 `use_comm_relay`(기본 `true`)로 `scout2map_comm`(관제 웹 릴레이)도 같이
+띄웁니다 — 예전에는 별도 터미널에서 `ros2 launch scout2map_comm comm_relay.launch.py`를
+따로 실행해야 했는데, 이제 한 번의 `ros2 launch`로 웹 관제까지 같이 올라옵니다. 릴레이만
+끄려면 `use_comm_relay:=false`, 파라미터 파일을 바꾸려면 `comm_relay_params:=<경로>`.
+같은 워크스페이스에 `scout2map_comm` 패키지가 빌드되어 있어야 합니다.
+
 ```bash
 ros2 service call /return_home/capture_start std_srvs/srv/Trigger "{}"
 ros2 service call /return_home/arm std_srvs/srv/SetBool "{data: true}"
