@@ -270,6 +270,22 @@ class ReturnHomeNode(Node):
         now_mono = time.monotonic()
         startup_age = max(0.0, now_mono - self._node_started_mono)
 
+        # Refresh the motion-inhibit heartbeat every control tick
+        # (control_rate_hz, 10Hz by default), not only on state transitions
+        # or the 1Hz status timer. cmd_vel_safety_gate treats this topic as
+        # a liveness signal and zeroes cmd_vel the instant it goes stale
+        # (inhibit_timeout_sec, default 1.0s) - with only the 1Hz
+        # _publish_status republish, the two periods are equal with zero
+        # margin, so any scheduling jitter (e.g. under the CPU load of
+        # running nav2+slam+vision+event_engine together) can push a
+        # republish past that window and glitch cmd_vel to zero mid-drive.
+        # Nav2 reads the resulting stall as "no progress" and keeps
+        # replanning around it - controller_server logging "Passing new
+        # path to controller" on repeat while the robot never actually
+        # moves (2026-08-29).
+        self._inhibit_pub.publish(
+            Bool(data=self._state not in ACTIVE_STATES))
+
         if (
             self._auto_capture
             and self._start_pose is None
