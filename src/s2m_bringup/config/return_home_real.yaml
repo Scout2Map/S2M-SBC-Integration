@@ -11,9 +11,13 @@ return_home:
     heartbeat_timeout_sec: 3.0
     drive_link_timeout_sec: 1.0
     tf_max_age_sec: 1.0
-    auto_capture_start: false
-    auto_capture_delay_sec: 0.0
-    auto_arm: false
+    # Real-hardware config used to leave these off, which meant the state
+    # machine could never leave WAITING_FOR_START - motion_inhibit stayed
+    # true forever and cmd_vel_safety_gate blocked all driving even with
+    # return_home merely enabled, not actually returning (2026-08-29).
+    auto_capture_start: true
+    auto_capture_delay_sec: 5.0
+    auto_arm: true
     return_timeout_sec: 180.0
     progress_timeout_sec: 30.0
     progress_min_delta_m: 0.05
