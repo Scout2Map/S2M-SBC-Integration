@@ -146,6 +146,8 @@ ros2 launch s2m_bringup s2m_slam_real.launch.py
 4. `slam_toolbox` — `map -> odom`
 5. Nav2 — 위 전부를 소비
 6. `scout_vision` — 선택형 USB 카메라 객체 검출
+7. `return_home` — 선택형 복귀 감시 노드와 `cmd_vel_safety_gate`
+8. `scout2map_comm` — 관제 웹 릴레이 (기본 켜짐)
 
 Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 확인한 뒤
 `use_nav2:=true`로 다시 실행합니다.
@@ -161,6 +163,8 @@ Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 �
 | `use_exploration` | `false` | 프론티어 자율 탐색 실행 (`use_nav2:=true` 필요) |
 | `use_vision` | `false` | USB 카메라와 AI Vision 노드 실행 |
 | `use_ekf` | `true` | `robot_localization` EKF로 `odom -> base_link` 발행 주체 결정 |
+| `use_return_home` | `false` | `cmd_vel_safety_gate` + `return_home` 실행 (아래 "실차 자동 복귀와 안전 게이트" 참고) |
+| `use_comm_relay` | `true` | `scout2map_comm`(관제 웹 릴레이) 실행 |
 | `use_rviz` | `false` | RViz 실행 |
 | `lidar_port` | `/dev/scout2map_lidar` | udev 규칙 미설치 시 `/dev/ttyUSB0` |
 | `lidar_frame` | `lidar_link` | URDF 링크 이름과 반드시 일치해야 함 |
@@ -169,13 +173,19 @@ Nav2는 기본적으로 꺼져 있습니다. 지도와 TF가 안정된 것을 �
 ### 실차 자동 복귀와 안전 게이트
 
 실차 mission에서는 Nav2나 teleop가 주행 브리지의 `/cmd_vel`을 직접 발행하지 않도록
-다음 launch를 사용합니다. 시작 시 게이트는 차단 상태이며, 정상 heartbeat, 주행 링크,
-TF를 확인한 뒤 출발점을 저장하고 명시적으로 무장해야 합니다.
+`use_nav2:=true use_return_home:=true`를 켜서 실행합니다. 시작 시 게이트는 차단
+상태이며, 정상 heartbeat, 주행 링크, TF를 확인한 뒤 출발점을 저장하고 명시적으로
+무장해야 합니다.
 
 ```bash
-ros2 launch s2m_bringup s2m_return_home_real.launch.py \
+ros2 launch s2m_bringup s2m_slam_real.launch.py \
+  use_nav2:=true use_return_home:=true \
   map_id:=mapping_20260818 use_rviz:=true
 ```
+
+(`s2m_return_home_real.launch.py`도 저장소에 남아 있고 `s2m_slam_real.launch.py`를
+같은 기본값으로 감싸는 얇은 wrapper라 동작은 동일하지만, 실제로 매일 쓰는 건 위
+플래그 조합 쪽입니다.)
 
 이 launch는 `use_comm_relay`(기본 `true`)로 `scout2map_comm`(관제 웹 릴레이)도 같이
 띄웁니다 — 예전에는 별도 터미널에서 `ros2 launch scout2map_comm comm_relay.launch.py`를

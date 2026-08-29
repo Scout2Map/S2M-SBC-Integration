@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""Start the real UGV stack with a single fail-safe cmd_vel path."""
+"""Start the real UGV stack with a single fail-safe cmd_vel path.
+
+Thin wrapper around s2m_slam_real.launch.py (use_nav2:=true by default here)
+plus cmd_vel_safety_gate + return_home on top. In practice the field
+workflow runs s2m_slam_real.launch.py directly with
+use_nav2:=true use_return_home:=true instead of this wrapper - kept in sync
+(same defaults, same pass-through args) so either path works, but if you're
+looking for "the" launch command actually used day to day, that's it.
+"""
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -37,6 +44,12 @@ def generate_launch_description():
             'vision_labels': LaunchConfiguration('vision_labels'),
             'map_id': LaunchConfiguration('map_id'),
             'nav_cmd_vel_topic': '/return_home/cmd_vel_input',
+            # s2m_slam_real.launch.py already starts scout2map_comm itself
+            # (use_comm_relay, on by default) - pass these through instead of
+            # also starting a second comm_relay node below, which would just
+            # fail to bind the same WebSocket port.
+            'use_comm_relay': LaunchConfiguration('use_comm_relay'),
+            'comm_relay_params': LaunchConfiguration('comm_relay_params'),
         }.items(),
     )
 
@@ -56,21 +69,6 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[params],
-    )
-
-    # scout2map_comm was previously started by hand in a separate terminal
-    # (see comm-relay-plan-2026-08-24 project notes - bundling it here was
-    # always the intent, just never wired up). use_comm_relay defaults on so
-    # a plain `ros2 launch s2m_bringup s2m_return_home_real.launch.py`
-    # brings the web relay up with everything else.
-    comm_relay = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(comm_relay_share, 'launch', 'comm_relay.launch.py')
-        ),
-        launch_arguments={
-            'params_file': LaunchConfiguration('comm_relay_params'),
-        }.items(),
-        condition=IfCondition(LaunchConfiguration('use_comm_relay')),
     )
 
     return LaunchDescription([
@@ -105,5 +103,4 @@ def generate_launch_description():
         real_stack,
         safety_gate,
         return_home,
-        comm_relay,
     ])

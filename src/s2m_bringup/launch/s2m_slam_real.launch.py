@@ -17,6 +17,7 @@ publishes:
   6. explore_lite            optional; drives Nav2 from Nav2's own costmap
   7. scout_vision            optional; publishes detections for Event Engine
   8. return_home             optional; failsafe home supervisor and safety gate
+  9. scout2map_comm          optional (on by default); Web-Monitoring WebSocket relay
 
 Nav2 is off by default. Bring the stack up without it, confirm the map and TF
 tree are stable, then relaunch with use_nav2:=true. Frontier exploration
@@ -43,6 +44,7 @@ def generate_launch_description():
     bringup_share = get_package_share_directory('s2m_bringup')
     event_share = get_package_share_directory('scout2map_event')
     vision_share = get_package_share_directory('scout_vision')
+    comm_relay_share = get_package_share_directory('scout2map_comm')
 
     xacro_file = os.path.join(
         description_share, 'urdf', 'scout2map.urdf.xacro')
@@ -95,6 +97,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_return_home', default_value='false',
             description='Start the return-home supervisor and cmd_vel safety gate.'),
+        DeclareLaunchArgument(
+            'use_comm_relay', default_value='true',
+            description='Start scout2map_comm, the Web-Monitoring WebSocket relay. '
+                        'Previously started by hand in a separate terminal.'),
         DeclareLaunchArgument('use_rviz', default_value='false'),
 
         # Passed straight through to s2m_onboard_bridge.launch.py, which is
@@ -137,6 +143,10 @@ def generate_launch_description():
         DeclareLaunchArgument('vision_labels', default_value=''),
         DeclareLaunchArgument(
             'return_home_params', default_value=default_return_home_params),
+        DeclareLaunchArgument(
+            'comm_relay_params',
+            default_value=os.path.join(
+                comm_relay_share, 'config', 'comm_relay.yaml')),
         DeclareLaunchArgument(
             'map_id', default_value='',
             description='Mapping-session identifier included in event JSON.'),
@@ -347,6 +357,20 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_rviz')),
     )
 
+    # scout2map_comm was previously started by hand in a separate terminal
+    # (see comm-relay-plan-2026-08-24 project notes). use_comm_relay defaults
+    # on so a plain `ros2 launch s2m_bringup s2m_slam_real.launch.py` brings
+    # the Web-Monitoring relay up alongside everything else.
+    comm_relay = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(comm_relay_share, 'launch', 'comm_relay.launch.py')
+        ),
+        launch_arguments={
+            'params_file': LaunchConfiguration('comm_relay_params'),
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('use_comm_relay')),
+    )
+
     return LaunchDescription(args + [
         robot_state_publisher,
         joint_state_publisher,
@@ -359,5 +383,6 @@ def generate_launch_description():
         exploration,
         vision,
         return_home,
+        comm_relay,
         rviz,
     ])
