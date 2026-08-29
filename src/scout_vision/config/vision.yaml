@@ -14,7 +14,7 @@ scout_vision:
     diagnostics_topic: "/diagnostics"
     vision_info_topic: "/vision/info"
     model_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_640_v9.onnx"
-    labels_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_640_lables_v9.txt"
+    labels_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_labels_v9.txt"
     input_width: 640
     input_height: 640
     confidence_threshold: 0.35
