@@ -61,6 +61,12 @@ quality 60)한 뒤 base64로 인코딩해서 이 토픽에 발행한다.
 Pi 5 부하가 문제라면 `snapshot_enabled:=false`로 끌 수 있다 — 꺼도
 `class_id`/`confidence` 기반 이벤트 자체는 그대로 동작하고, 썸네일만 빠진다.
 
+이 토픽은 `/vision/detections`보다 **먼저** 발행한다. 크롭·리사이즈·JPEG
+인코딩·base64가 실제로 시간이 걸리는 작업이라, 순서를 반대로 하면(감지 먼저)
+`scout2map_event` 쪽에서 감지 이벤트를 처리할 시점에 아직 스냅샷이 나가지도
+않은 상태라 거의 항상 매칭에 실패한다 — `scout2map_event`의
+`vision_snapshot_wait_s`(짧게 대기 후 발행)와 짝을 이루는 설계다.
+
 ## 실행
 
 기본 카메라 설정은 Pi 5 부하 측정을 위해 640x480 10 FPS이며, AU142의 FHD 최대

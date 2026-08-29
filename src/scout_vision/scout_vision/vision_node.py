@@ -205,9 +205,15 @@ class VisionNode(Node):
                 hypothesis.hypothesis.score = item['score']
                 detection.results.append(hypothesis)
                 output.detections.append(detection)
-            self._detections_pub.publish(output)
+            # Publish snapshots first: encoding them (crop/resize/JPEG/
+            # base64) takes real time, and scout2map_event holds a
+            # VISION_DETECTION event only briefly (vision_snapshot_wait_s)
+            # waiting for a matching thumbnail. Publishing detections first
+            # left the encode work to happen entirely after the event's own
+            # deadline had already started, so a match almost never landed.
             if self._snapshot_enabled and detections:
                 self._publish_snapshots(image, message.header, detections)
+            self._detections_pub.publish(output)
             self._inference_error = ''
             self._latencies_ms.append(
                 (time.perf_counter() - started) * 1000.0)
