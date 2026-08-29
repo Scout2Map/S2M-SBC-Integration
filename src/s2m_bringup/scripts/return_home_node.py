@@ -79,6 +79,8 @@ class ReturnHomeNode(Node):
         self._best_distance = None
         self._last_tf_stamp_ns = None
         self._last_tf_update_mono = None
+        self._last_pose_lookup_fail_reason = None
+        self._last_auto_capture_fail_reason = None
         self._steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
 
         self._tf_buffer = Buffer(node=self)
@@ -149,6 +151,14 @@ class ReturnHomeNode(Node):
         )
 
     def _lookup_pose(self):
+        # Sets self._last_pose_lookup_fail_reason on every None return, so
+        # _capture_start()'s generic "TF is unavailable or stale" reason can
+        # say WHICH of the three checks below actually failed - a
+        # WAITING_FOR_START stuck for a long time with heartbeat and drive
+        # link both healthy per /return_home/status had no way to tell
+        # "map frame genuinely doesn't exist" from "it exists and resolves,
+        # but not continuously enough to clear the tf_max_age_sec window"
+        # without this (2026-08-29).
         try:
             transform = self._tf_buffer.lookup_transform(
                 self._global_frame,
@@ -156,7 +166,8 @@ class ReturnHomeNode(Node):
                 Time(),
                 timeout=Duration(seconds=0.02),
             )
-        except TransformException:
+        except TransformException as exc:
+            self._last_pose_lookup_fail_reason = f'lookup_transform failed: {exc}'
             return None
 
         stamp = Time.from_msg(transform.header.stamp)
@@ -169,13 +180,27 @@ class ReturnHomeNode(Node):
             self._last_tf_update_mono is None
             or now_mono - self._last_tf_update_mono > self._tf_max_age
         ):
+            gap = (
+                None if self._last_tf_update_mono is None
+                else round(now_mono - self._last_tf_update_mono, 3)
+            )
+            self._last_pose_lookup_fail_reason = (
+                f'TF stamp has not changed in {gap}s '
+                f'(tf_max_age_sec={self._tf_max_age}) - the publisher is '
+                'not updating it continuously enough' if gap is not None
+                else 'no TF update observed yet'
+            )
             return None
 
         if stamp_ns:
             ros_age = (self.get_clock().now() - stamp).nanoseconds / 1e9
             if ros_age < -0.1 or ros_age > self._tf_max_age:
+                self._last_pose_lookup_fail_reason = (
+                    f'TF stamp age {ros_age:.3f}s outside '
+                    f'[-0.1, {self._tf_max_age}] (tf_max_age_sec)')
                 return None
 
+        self._last_pose_lookup_fail_reason = None
         pose = PoseStamped()
         pose.header.frame_id = self._global_frame
         pose.header.stamp = self.get_clock().now().to_msg()
@@ -192,7 +217,9 @@ class ReturnHomeNode(Node):
             return False, 'drive link is not healthy'
         pose = self._lookup_pose()
         if pose is None:
-            return False, 'map to base_link TF is unavailable or stale'
+            return False, (
+                'map to base_link TF is unavailable or stale: '
+                f'{self._last_pose_lookup_fail_reason}')
 
         self._start_pose = pose
         self._start_pose_pub.publish(deepcopy(pose))
@@ -293,10 +320,22 @@ class ReturnHomeNode(Node):
             and self._heartbeat_fresh()
             and self._drive_healthy()
         ):
-            captured, _ = self._capture_start()
+            captured, reason = self._capture_start()
             if captured and self._auto_arm and self._heartbeat_fresh():
                 self._armed = True
                 self._set_state('NORMAL')
+            elif not captured:
+                # _capture_start()'s failure reason used to be silently
+                # discarded here, so a stuck WAITING_FOR_START (heartbeat
+                # and drive link both healthy, per /return_home/status) had
+                # no way to tell whether the TF lookup itself was failing or
+                # just its staleness/continuity check, short of adding this
+                # log line and reproducing again (2026-08-29). Rate-limited
+                # to once per distinct reason - this runs at control_rate_hz
+                # (10Hz) and would otherwise spam identical warnings.
+                if reason != self._last_auto_capture_fail_reason:
+                    self._last_auto_capture_fail_reason = reason
+                    self.get_logger().warn(f'auto-capture attempt failed: {reason}')
 
         health = Health(
             heartbeat_seen=self._heartbeat_seen,
