@@ -13,12 +13,12 @@ scout_vision:
     detections_topic: "/vision/detections"
     diagnostics_topic: "/diagnostics"
     vision_info_topic: "/vision/info"
-    model_path: "/home/scout2map/models/yolov8n.onnx"
-    labels_path: "/home/scout2map/models/coco_labels.txt"
+    model_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_640_v9.onnx"
+    labels_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_640_lables_v9.txt"
     input_width: 640
     input_height: 640
-    confidence_threshold: 0.5
-    nms_threshold: 0.45
+    confidence_threshold: 0.35
+    nms_threshold: 0.60
     max_fps: 5.0
     frame_timeout_s: 2.0
 
