@@ -3,12 +3,11 @@
 # automatically on boot, so the robot comes up without anyone SSH-ing in and
 # running `ros2 launch` by hand.
 #
-# s2m_slam_real.launch.py is the launch file actually used day to day - the
-# use_nav2:=true use_return_home:=true flags below reproduce what the
-# now-unused s2m_return_home_real.launch.py wrapper used to default to. If
-# your normal command adds more flags (map_id, use_vision, use_event_engine,
-# ...), add them to ExecStart too; this only covers what's needed for a
-# functional SLAM+Nav2+return-home+comm_relay stack.
+# s2m_slam_real.launch.py is the one real-hardware launch file in this repo
+# (the old s2m_return_home_real.launch.py wrapper was removed - nothing used
+# it). If your normal command adds more flags (map_id, use_vision,
+# use_event_engine, ...), add them to ExecStart too; this only covers what's
+# needed for a functional SLAM+Nav2+return-home+comm_relay stack.
 #
 # This is opt-in - install.sh does NOT install or enable this. Motion is
 # still safe by default: the launch brings the ROS graph up but

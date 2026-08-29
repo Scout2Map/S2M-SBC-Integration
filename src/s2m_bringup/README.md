@@ -124,7 +124,8 @@ ros2 launch s2m_bringup s2m_ekf.launch.py \
 ## 실차 자동 복귀 mission
 
 ```bash
-ros2 launch s2m_bringup s2m_return_home_real.launch.py \
+ros2 launch s2m_bringup s2m_slam_real.launch.py \
+  use_nav2:=true use_return_home:=true \
   map_id:=mapping_20260818
 ```
 

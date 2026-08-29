@@ -183,9 +183,9 @@ ros2 launch s2m_bringup s2m_slam_real.launch.py \
   map_id:=mapping_20260818 use_rviz:=true
 ```
 
-(`s2m_return_home_real.launch.py`도 저장소에 남아 있고 `s2m_slam_real.launch.py`를
-같은 기본값으로 감싸는 얇은 wrapper라 동작은 동일하지만, 실제로 매일 쓰는 건 위
-플래그 조합 쪽입니다.)
+`s2m_slam_real.launch.py`가 실차용 launch는 이거 하나다 — 예전에 별도로 있던
+`s2m_return_home_real.launch.py`(같은 걸 감싸던 wrapper)는 실제로 안 쓰여서
+정리했다.
 
 이 launch는 `use_comm_relay`(기본 `true`)로 `scout2map_comm`(관제 웹 릴레이)도 같이
 띄웁니다 — 예전에는 별도 터미널에서 `ros2 launch scout2map_comm comm_relay.launch.py`를

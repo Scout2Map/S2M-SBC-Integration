@@ -87,7 +87,8 @@ bringup은 아직 없으므로 이 두 계층을 구현해야 실차 SLAM/Nav2 �
 
 실차 자동 복귀는 다음 항목이 모두 완료된 후 활성화한다.
 
-- `s2m_return_home_real.launch.py`에서 STM32로 가는 단일 최종 cmd_vel 게이트를 사용한다.
+- `s2m_slam_real.launch.py`(`use_nav2:=true use_return_home:=true`)에서 STM32로
+  가는 단일 최종 cmd_vel 게이트를 사용한다.
 - drive/link_ok가 telemetry 단절과 주행 fault를 반영한다. drive_link_adapter를 실행하고
   USB 케이블을 물리적으로 분리해 1초 안에 false로 바뀌는지 확인한다.
 - 저장 지도와 AMCL에서 시작 좌표를 안정적으로 복원한다.

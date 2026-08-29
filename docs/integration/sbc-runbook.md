@@ -59,7 +59,7 @@ dependencies.repos는 재현 가능한 통합 기준점을 고정한다. 의존 
 | 가스 위험 지도 | ros2 launch scout_gas sim_with_gas.launch.py | gas와 marker |
 | 센서 가상 입력 | ros2 launch scout2map_bridge fake_sensors.launch.py | 센서 토픽 주기 |
 | MCU 실입력 | ros2 launch s2m_bringup s2m_onboard_bridge.launch.py | 프레임 파싱, 토픽, static TF |
-| 실차 안전 mission | ros2 launch s2m_bringup s2m_return_home_real.launch.py map_id:=mapping_YYYYMMDD | Event Engine, 단일 cmd_vel 게이트, 자동 복귀 |
+| 실차 안전 mission | ros2 launch s2m_bringup s2m_slam_real.launch.py use_nav2:=true use_return_home:=true map_id:=mapping_YYYYMMDD | Event Engine, 단일 cmd_vel 게이트, 자동 복귀 |
 
 시뮬레이션의 상세 절차는 simulation-validation-guide.md를 따른다.
 

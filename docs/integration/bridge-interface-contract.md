@@ -148,7 +148,8 @@ ros2 launch s2m_bringup s2m_onboard_bridge.launch.py \
 시뮬레이션과 실차 브리지를 동시에 실행하지 않는다. `/odom`, `/imu/data`, `/cmd_vel`,
 `odom -> base_link`가 모두 충돌한다.
 
-실차 자동 복귀 mission에서는 `s2m_return_home_real.launch.py`를 사용한다. Nav2 출력과
+실차 자동 복귀 mission에서는 `s2m_slam_real.launch.py`를
+`use_nav2:=true use_return_home:=true`로 실행한다. Nav2 출력과
 teleop 출력을 `/return_home/cmd_vel_input`으로 보내고 `cmd_vel_safety_gate` 하나만 최종
 `/cmd_vel`을 발행해야 한다. `/cmd_vel` 직접 teleop는 브리지 단독 벤치 시험에만 쓴다.
 

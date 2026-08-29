@@ -9,7 +9,7 @@
 | 센서 인터페이스 | Pico USB CDC 장치와 snapshot/status 토픽 검사 | `scripts/raspberry_pi/check_mcu_interfaces.sh` |
 | UGV 시뮬레이션 | 실차 `base_link` 모델, slip world, SLAM Toolbox, Nav2 연결 | `src/s2m_bringup` |
 | 자동 복귀 시뮬레이션 | Nav2 시작점 goal, fault injector, steady-clock watchdog, 단일 cmd_vel 안전 게이트 | `src/s2m_bringup` |
-| 실차 안전 mission | Nav2/teleop 게이트 입력, drive link adapter, Event Engine, 수동 무장형 return_home launch | `s2m_return_home_real.launch.py` |
+| 실차 안전 mission | Nav2/teleop 게이트 입력, drive link adapter, Event Engine, 수동 무장형 return_home launch | `s2m_slam_real.launch.py` (`use_nav2:=true use_return_home:=true`) |
 | 가스 위험 지도 | 선택성 센서, 가우시안 농도장, 육각 지도, 이벤트·map 저장 | `src/scout_gas` |
 | AI Vision 프로토타입 | USB 카메라, YOLOv8 ONNX 추론, 표준 검출·진단, Event Engine 입력 | `src/scout_vision` |
 | 자동 검사 | Python/XML/YAML/Markdown/셸 구문 검사 | `tools/static_check.py`, `.github/workflows` |
