@@ -152,6 +152,10 @@ ros2 launch s2m_bringup s2m_slam_real.launch.py
 단계별 검증 절차는
 [실차 검증 체크리스트](../../docs/integration/real-hardware-validation.md)를 따른다.
 
+SSH로 접속해서 매번 손으로 `ros2 launch`를 치는 대신 부팅하면 스택이 알아서
+올라오길 원하면 [`systemd/README.md`](systemd/README.md)를 참고한다(선택 사항,
+`install.sh`가 자동으로 설치하지 않음).
+
 ## 환경 변수
 
 `~/scout2map_env.sh`가 생성되고 `.bashrc`에서 자동으로 읽힌다.
