@@ -1,7 +1,16 @@
 v4l2_camera:
   ros__parameters:
     video_device: "/dev/video0"
-    pixel_format: "YUYV"
+    # MJPG instead of raw YUYV - the camera compresses on-device, so the
+    # actual USB isochronous bandwidth demand drops sharply at the same
+    # resolution/fps. Root cause of the 2026-08-29 "waiting for camera
+    # frames forever" incident was this camera failing to negotiate USB
+    # bandwidth for raw YUYV (uvcvideo "Failed to resubmit video URB",
+    # fixed with quirks=0x280 - keep that quirks module option regardless
+    # of pixel_format, it is not redundant with this). v4l2_camera decodes
+    # MJPG to output_encoding itself, so scout_vision needs no changes -
+    # it always receives rgb8 either way.
+    pixel_format: "MJPG"
     output_encoding: "rgb8"
     image_size: [640, 480]
     use_v4l2_buffer_timestamps: true
