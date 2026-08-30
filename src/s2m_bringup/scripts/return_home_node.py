@@ -2,6 +2,8 @@
 """Return to a captured start pose when the control-network heartbeat is lost."""
 
 import json
+import subprocess
+import threading
 import time
 from copy import deepcopy
 
@@ -387,6 +389,25 @@ class ReturnHomeNode(Node):
             self._safe_stop('Nav2 action server unavailable')
             return False, 'NavigateToPose action server is unavailable'
 
+        # Auto-triggered returns (control-heartbeat timeout, drive/TF
+        # faults via decide() in _control_tick) never go through comm_relay
+        # - this used to just fire the return goal on top of whatever
+        # explore_lite already had in flight. Nav2 preempts the old goal
+        # the instant this new one lands, but explore_lite's own process
+        # stays alive and notices its goal got cancelled - it immediately
+        # picks a new frontier and sends another NavigateToPose goal,
+        # which preempts *this* one right back. Robot ends up fighting
+        # itself between exploring and returning instead of actually
+        # coming home (2026-08-30). comm_relay's stop_mission path already
+        # kills explore_lite by name for the identical reason (see
+        # S2M-CommRelay comm_relay_node.py); mirrored here so an
+        # auto-triggered return is exactly as safe as an operator pressing
+        # stop first, and does not depend on comm_relay being alive to
+        # enforce it - same reasoning as watching /control/heartbeat here
+        # directly instead of trusting comm_relay to relay a stop (see
+        # docs/integration/bridge-interface-contract.md).
+        self._kill_stray_explore_processes()
+
         goal = NavigateToPose.Goal()
         goal.pose = deepcopy(self._start_pose)
         goal.pose.header.stamp = self.get_clock().now().to_msg()
@@ -400,6 +421,39 @@ class ReturnHomeNode(Node):
         future.add_done_callback(self._goal_response)
         self.get_logger().warn(f'return requested: {reason}')
         return True, 'return goal sent to Nav2'
+
+    def _kill_stray_explore_processes(self):
+        # subprocess.run(..., timeout=2.0) blocks whatever thread calls
+        # it, and _request_return() runs inside _control_tick() on
+        # rclpy.spin()'s single-threaded executor - while pkill blocked,
+        # motion_inhibit would stop being republished too (see the
+        # _control_tick comment above on why that 1s window matters).
+        # Off-thread for the same reason comm_relay backgrounds its own
+        # copy of this call.
+        threading.Thread(
+            target=self._run_pkill_explore_lite, daemon=True).start()
+
+    def _run_pkill_explore_lite(self):
+        try:
+            result = subprocess.run(
+                ['pkill', '-f', 'explore_lite'],
+                capture_output=True, timeout=2.0)
+        except Exception as exc:
+            self.get_logger().error(
+                f'failed to pkill stray explore_lite process(es): {exc}')
+            return
+
+        # pkill returns 1 when nothing matched, which is the common case
+        # once an operator has already stopped the explore mission by
+        # hand - only 0 (something was actually still running) is worth a
+        # log line here; anything else is a real error.
+        if result.returncode == 0:
+            self.get_logger().warn(
+                'killed stray explore_lite process(es) by name before returning home')
+        elif result.returncode not in (0, 1):
+            stderr = result.stderr.decode(errors='replace').strip()
+            self.get_logger().warn(
+                f'pkill -f explore_lite exited {result.returncode}: {stderr}')
 
     def _goal_feedback(self, message):
         distance = float(message.feedback.distance_remaining)
