@@ -172,14 +172,29 @@ def generate_launch_description():
         # Seconds to wait before starting SLAM and Nav2. The bridges need to
         # open their serial ports and the LiDAR needs to spin up first.
         DeclareLaunchArgument('slam_start_delay', default_value='5.0'),
-        DeclareLaunchArgument('event_start_delay', default_value='6.0'),
+        # Was 6.0 (only 1s after slam_start_delay) - slam_toolbox is a
+        # lifecycle node, so that 1s has to cover its own configure/activate
+        # plus receiving and scan-matching the first /scan before it ever
+        # broadcasts a map -> odom transform. event_engine's TF listener is
+        # freshly created at startup with no history, so any event that
+        # evaluates before that first broadcast lands gets tf2's
+        # "'map' passed to lookupTransform argument target_frame does not
+        # exist" - not an interpolation/extrapolation failure, but "this
+        # buffer has never seen that frame at all" - and is stuck
+        # coordinate_status=unresolved permanently for that one event
+        # (2026-08-30, reproduced on GAS_SENSOR_WARMUP: it only ever raises
+        # once, right at boot while the ENS160 is still warming up, so it
+        # reliably lands inside this race every run). Bumped to give SLAM
+        # roughly the same startup margin nav2_start_delay already gives
+        # Nav2 below.
+        DeclareLaunchArgument('event_start_delay', default_value='9.0'),
         # Later than event_start_delay, not relative to it (same reasoning as
         # exploration_start_delay vs nav2_start_delay above) - prediction_node
         # only needs event_engine's subscription to be up before it starts
         # polling sensor_history.db, and its own min_span_s (30s default)
         # gate means it will not publish anything useful for a while
         # regardless, so this margin is generous rather than tightly tuned.
-        DeclareLaunchArgument('prediction_start_delay', default_value='8.0'),
+        DeclareLaunchArgument('prediction_start_delay', default_value='11.0'),
         DeclareLaunchArgument('nav2_start_delay', default_value='10.0'),
         # Nav2's global costmap needs a few seconds after navigation_launch.py
         # comes up before it has published anything explore_lite can read, so
