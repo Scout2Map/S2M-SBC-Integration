@@ -18,12 +18,17 @@ publishes:
   7. scout_vision            optional; publishes detections for Event Engine
   8. return_home             optional; failsafe home supervisor and safety gate
   9. scout2map_comm          optional (on by default); Web-Monitoring WebSocket relay
+ 10. prediction_node         optional; short-horizon trend forecast over event_engine's
+                             sensor_history.db
 
 Nav2 is off by default. Bring the stack up without it, confirm the map and TF
 tree are stable, then relaunch with use_nav2:=true. Frontier exploration
 (use_exploration:=true) needs Nav2's global costmap already publishing, so
 enable use_nav2 too -- the launch file does not enforce that dependency for
-you, it only starts the node later than nav2_start_delay.
+you, it only starts the node later than nav2_start_delay. Trend prediction
+(use_prediction:=true) needs use_event_engine:=true the same way -- it
+reads the sensor_history.db that only event_engine populates, and the
+launch file does not enforce that dependency either.
 """
 
 import os
@@ -87,6 +92,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_event_markers', default_value='false',
             description='Show /events as RViz markers (debug/test).'),
+        DeclareLaunchArgument(
+            'use_prediction', default_value='false',
+            description='Start prediction_node (short-horizon trend forecast, '
+                        'e.g. PREDICTED_HIGH_TEMP/PREDICTED_LOW_TEMP). Requires '
+                        'use_event_engine:=true - it only reads the '
+                        'sensor_history.db that event_engine populates, this '
+                        'flag does not start event_engine for you.'),
         DeclareLaunchArgument(
             'use_exploration', default_value='false',
             description='Start frontier exploration (explore_lite). '
@@ -161,6 +173,13 @@ def generate_launch_description():
         # open their serial ports and the LiDAR needs to spin up first.
         DeclareLaunchArgument('slam_start_delay', default_value='5.0'),
         DeclareLaunchArgument('event_start_delay', default_value='6.0'),
+        # Later than event_start_delay, not relative to it (same reasoning as
+        # exploration_start_delay vs nav2_start_delay above) - prediction_node
+        # only needs event_engine's subscription to be up before it starts
+        # polling sensor_history.db, and its own min_span_s (30s default)
+        # gate means it will not publish anything useful for a while
+        # regardless, so this margin is generous rather than tightly tuned.
+        DeclareLaunchArgument('prediction_start_delay', default_value='8.0'),
         DeclareLaunchArgument('nav2_start_delay', default_value='10.0'),
         # Nav2's global costmap needs a few seconds after navigation_launch.py
         # comes up before it has published anything explore_lite can read, so
@@ -292,6 +311,25 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_event_markers')),
     )
 
+    # prediction_node has its own launch file (S2M-Event-Engine's
+    # prediction.launch.py) with individual scalar parameters rather than a
+    # single yaml, unlike every other included layer below - so this just
+    # starts the node directly with its own defaults instead of an
+    # IncludeLaunchDescription, matching the event_engine/event_markers
+    # Node actions right above rather than the vision/comm_relay/nav2
+    # IncludeLaunchDescription actions further down.
+    prediction = TimerAction(
+        period=LaunchConfiguration('prediction_start_delay'),
+        actions=[Node(
+            package='scout2map_event',
+            executable='prediction_node',
+            name='prediction_node',
+            output='screen',
+            emulate_tty=True,
+        )],
+        condition=IfCondition(LaunchConfiguration('use_prediction')),
+    )
+
     exploration = TimerAction(
         period=LaunchConfiguration('exploration_start_delay'),
         actions=[Node(
@@ -379,6 +417,7 @@ def generate_launch_description():
         slam,
         event_engine,
         event_markers,
+        prediction,
         nav2,
         exploration,
         vision,
