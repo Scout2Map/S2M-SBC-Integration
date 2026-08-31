@@ -26,6 +26,13 @@ class DriveLinkAdapter(Node):
 
         self.declare_parameter('drive_status_topic', '/drive/status')
         self.declare_parameter('link_topic', '/drive/link_ok')
+        # Separate from link_topic on purpose: batt_critical must reach
+        # return_home as its own signal even though it deliberately does
+        # NOT block link_ok (see batt_critical_blocks_link below) - a
+        # critical-but-not-dead pack should still be able to drive itself
+        # home instead of being reported healthy with no way to trigger one.
+        self.declare_parameter(
+            'battery_critical_topic', '/drive/battery_critical')
         self.declare_parameter('publish_rate_hz', 10.0)
 
         # DriveStatus arrives at status_rate_hz (10Hz by default in the bridge
@@ -60,6 +67,8 @@ class DriveLinkAdapter(Node):
 
         self._link_pub = self.create_publisher(
             Bool, str(gp('link_topic').value), 10)
+        self._battery_critical_pub = self.create_publisher(
+            Bool, str(gp('battery_critical_topic').value), 10)
         self.create_subscription(
             DriveStatus,
             str(gp('drive_status_topic').value),
@@ -104,9 +113,27 @@ class DriveLinkAdapter(Node):
             return False, 'battery critical'
         return True, ''
 
+    def _battery_critical_state(self):
+        """True only when a fresh DriveStatus reports batt_critical.
+
+        Independent of _evaluate(): link_ok can be True (battery critical
+        does not block the link by default) while this is also True, and a
+        stale/missing DriveStatus reports False here rather than an unknown
+        critical state - return_home already gets a stale-status SAFE_STOP
+        via drive_healthy, so this only needs to reflect what the firmware
+        last actually reported.
+        """
+        if self._last_status is None or self._last_status_mono is None:
+            return False
+        if time.monotonic() - self._last_status_mono > self._timeout:
+            return False
+        return bool(self._last_status.batt_critical)
+
     def _tick(self):
         link_ok, reason = self._evaluate()
         self._link_pub.publish(Bool(data=link_ok))
+        self._battery_critical_pub.publish(
+            Bool(data=self._battery_critical_state()))
 
         # Log only on edges, this runs at 10Hz
         if link_ok != self._last_published:

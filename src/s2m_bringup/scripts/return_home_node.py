@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Return to a captured start pose when the control-network heartbeat is lost."""
+"""Return to a captured start pose on control-network heartbeat loss or a
+critical battery pack."""
 
 import json
 import subprocess
@@ -37,6 +38,7 @@ class ReturnHomeNode(Node):
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('heartbeat_topic', '/control/heartbeat')
         self.declare_parameter('drive_link_topic', '/drive/link_ok')
+        self.declare_parameter('battery_critical_topic', '/drive/battery_critical')
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter(
             'motion_inhibit_topic', '/return_home/motion_inhibit')
@@ -73,6 +75,13 @@ class ReturnHomeNode(Node):
         self._drive_seen = False
         self._drive_link_ok = False
         self._last_drive_status_mono = None
+        # Defaults to False (not critical) until the first message arrives,
+        # same conservative "unknown is not yet an emergency" stance as
+        # _drive_link_ok - drive_healthy()'s own staleness check already
+        # forces SAFE_STOP if the publisher (drive_link_adapter, or
+        # sim_fault_injector in simulation) stops publishing altogether, so
+        # this field does not need its own age tracking.
+        self._battery_critical = False
         self._goal_handle = None
         self._return_reason = ''
         self._node_started_mono = time.monotonic()
@@ -106,6 +115,9 @@ class ReturnHomeNode(Node):
             Empty, str(gp('heartbeat_topic').value), self._on_heartbeat, 10)
         self.create_subscription(
             Bool, str(gp('drive_link_topic').value), self._on_drive_link, 10)
+        self.create_subscription(
+            Bool, str(gp('battery_critical_topic').value),
+            self._on_battery_critical, 10)
 
         self.create_service(
             Trigger, '/return_home/capture_start', self._capture_service)
@@ -132,6 +144,9 @@ class ReturnHomeNode(Node):
         self._drive_seen = True
         self._drive_link_ok = bool(msg.data)
         self._last_drive_status_mono = time.monotonic()
+
+    def _on_battery_critical(self, msg):
+        self._battery_critical = bool(msg.data)
 
     @staticmethod
     def _age(stamp):
@@ -345,12 +360,21 @@ class ReturnHomeNode(Node):
             drive_seen=self._drive_seen,
             drive_healthy=self._drive_healthy(),
             tf_healthy=self._lookup_pose() is not None,
+            battery_critical=self._battery_critical,
         )
         decision = decide(
             self._state, self._armed, self._start_pose is not None, health)
 
         if decision is Decision.RETURN_HOME:
-            self._request_return('control heartbeat timeout')
+            # Both conditions can be true at once (e.g. heartbeat drops
+            # while the pack is already critical); battery takes the
+            # reported reason since it is the one with a hardware clock
+            # ticking against it, but the actual guard in decide() already
+            # covers whichever fired.
+            reason = (
+                'battery critical' if self._battery_critical
+                else 'control heartbeat timeout')
+            self._request_return(reason)
         elif decision is Decision.SAFE_STOP:
             if not health.drive_healthy:
                 reason = 'drive link lost or stale'
@@ -525,6 +549,7 @@ class ReturnHomeNode(Node):
             'drive_seen': self._drive_seen,
             'drive_link_ok': self._drive_link_ok,
             'drive_status_age_sec': self._age(self._last_drive_status_mono),
+            'battery_critical': self._battery_critical,
             'best_distance_m': self._best_distance,
             'reason': self._return_reason,
         }
