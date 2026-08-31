@@ -61,6 +61,24 @@ quality 60)한 뒤 base64로 인코딩해서 이 토픽에 발행한다.
 Pi 5 부하가 문제라면 `snapshot_enabled:=false`로 끌 수 있다 — 꺼도
 `class_id`/`confidence` 기반 이벤트 자체는 그대로 동작하고, 썸네일만 빠진다.
 
+**전체 프레임 스냅샷 (신규):** 위 크롭은 감지된 물체만 잘라내서 "이게 로봇
+앞 어디쯤에 있는지" 맥락이 안 보인다는 문제가 있었다. `snapshot_full_frame_enabled`
+(기본 `true`)가 켜져 있으면, 같은 payload에 `frame_jpeg_b64` 필드가 하나 더
+붙는다 - 그 프레임에서 감지된 모든 박스를 그려 넣은 전체 카메라 이미지를
+`snapshot_full_frame_max_width`(기본 480px)로 리사이즈, `snapshot_full_frame_jpeg_quality`
+(기본 55)로 압축한 것이다. 크롭 목록(`snapshots`)은 그대로 유지되므로
+`scout2map_event`의 `detection_id` 매칭 로직은 영향 없다.
+
+```json
+{
+  "stamp_sec": 1234, "stamp_nanosec": 5678, "frame_id": "camera_optical_frame",
+  "snapshots": [
+    { "detection_id": "42:0", "class_id": "person_in_danger", "jpeg_b64": "..." }
+  ],
+  "frame_jpeg_b64": "..."
+}
+```
+
 이 토픽은 `/vision/detections`보다 **먼저** 발행한다. 크롭·리사이즈·JPEG
 인코딩·base64가 실제로 시간이 걸리는 작업이라, 순서를 반대로 하면(감지 먼저)
 `scout2map_event` 쪽에서 감지 이벤트를 처리할 시점에 아직 스냅샷이 나가지도
@@ -88,6 +106,16 @@ ros2 launch scout_vision vision.launch.py \
   model_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_320_v2.onnx \
   labels_path:=$(ros2 pkg prefix scout_vision)/share/scout_vision/models/s2m_vAI_lite_labels_v2.txt \
   --ros-args -p input_width:=320 -p input_height:=320
+```
+
+**추론 지연이 클 때:** `max_fps`는 스로틀일 뿐 실제 `forward()` 소요 시간을
+줄여주지 않는다 - Pi 5에서 640 모델 기준 프레임당 ~1000ms가 걸리면 `max_fps`를
+5든 15든 체감 차이가 없다(어차피 그 이상 못 돈다). 320 모델로 바꾸는 게
+가장 확실하고, `dnn_num_threads`(기본 0 = OpenCV 기본 동작 유지)를 Pi의 코어
+수(예: 4)로 명시해보는 것도 공짜로 시도해볼 만하다:
+
+```bash
+ros2 launch scout_vision vision.launch.py --ros-args -p dnn_num_threads:=4
 ```
 
 다른 모델로 완전히 교체하려면 임의의 경로를 넘기면 된다.

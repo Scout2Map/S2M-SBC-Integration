@@ -9,6 +9,7 @@ import time
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from rcl_interfaces.msg import SetParametersResult
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import (
@@ -17,7 +18,11 @@ from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
 )
-from scout_vision.snapshot import encode_snapshot_jpeg
+from scout_vision.snapshot import (
+    draw_detections,
+    encode_frame_jpeg,
+    encode_snapshot_jpeg,
+)
 from scout_vision.yolo import decode_yolov8, prepare_input
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
@@ -47,6 +52,17 @@ class VisionNode(Node):
         self.declare_parameter('max_fps', 5.0)
         self.declare_parameter('frame_timeout_s', 2.0)
 
+        # cv2.dnn's OpenCV backend picks its own thread count by default,
+        # which on a Pi 5 running several other ROS nodes at once does not
+        # always mean "use all 4 cores for this forward() call". 0 leaves
+        # OpenCV's default behavior alone; set to the core count (e.g. 4)
+        # to make it explicit. This does not change WHAT is computed, only
+        # how many threads cv2.dnn.Net.forward() is allowed to use - net
+        # effect on the ~1s/frame latency depends on how much headroom the
+        # other nodes leave, so treat it as a free thing to try rather than
+        # a guaranteed fix.
+        self.declare_parameter('dnn_num_threads', 0)
+
         # Small crop of each detection's bounding box, JPEG+base64 in a JSON
         # side topic, so a human can visually confirm a hazard without SSH-ing
         # into the robot. Off by default is not an option here - a wrongly
@@ -59,6 +75,19 @@ class VisionNode(Node):
         self.declare_parameter('snapshot_jpeg_quality', 60)
         self.declare_parameter('snapshot_margin_ratio', 0.15)
 
+        # Full-frame snapshot (whole camera image, all boxes drawn on it) -
+        # separate from the per-detection crops above. A tight crop alone
+        # does not tell an operator WHERE in front of the robot a hazard
+        # is; this rides in the same /vision/snapshots payload as an extra
+        # 'frame_jpeg_b64' field so scout2map_event's existing per-detection
+        # matching is untouched. Its own max_width/jpeg_quality because a
+        # full frame is naturally much bigger than one box crop - tune it
+        # down (comm_relay can do this live, see SETTABLE_PARAMS) if the
+        # link to the web client is bandwidth constrained.
+        self.declare_parameter('snapshot_full_frame_enabled', True)
+        self.declare_parameter('snapshot_full_frame_max_width', 480)
+        self.declare_parameter('snapshot_full_frame_jpeg_quality', 55)
+
         gp = self.get_parameter
         self._input_width = int(gp('input_width').value)
         self._input_height = int(gp('input_height').value)
@@ -68,10 +97,21 @@ class VisionNode(Node):
         self._minimum_period = 1.0 / max_fps if max_fps > 0 else 0.0
         self._frame_timeout = max(0.1, float(gp('frame_timeout_s').value))
 
+        dnn_num_threads = int(gp('dnn_num_threads').value)
+        if dnn_num_threads > 0:
+            cv2.setNumThreads(dnn_num_threads)
+
         self._snapshot_enabled = bool(gp('snapshot_enabled').value)
         self._snapshot_max_size = int(gp('snapshot_max_size').value)
         self._snapshot_jpeg_quality = int(gp('snapshot_jpeg_quality').value)
         self._snapshot_margin_ratio = float(gp('snapshot_margin_ratio').value)
+
+        self._snapshot_full_frame_enabled = bool(
+            gp('snapshot_full_frame_enabled').value)
+        self._snapshot_full_frame_max_width = int(
+            gp('snapshot_full_frame_max_width').value)
+        self._snapshot_full_frame_jpeg_quality = int(
+            gp('snapshot_full_frame_jpeg_quality').value)
 
         self._bridge = CvBridge()
         self._net = None
@@ -107,6 +147,16 @@ class VisionNode(Node):
             str(gp('snapshot_topic').value),
             10,
         )
+
+        # comm_relay's settings panel (and the link-quality auto-adjust
+        # described in comm_relay_node.py) changes these via the standard
+        # set_parameters service. Without this callback that only updates
+        # the ROS parameter server's stored value - this node's own cached
+        # attributes (self._minimum_period, self._confidence, ...) were set
+        # once in __init__ and never re-read, so a live change silently had
+        # no effect on actual inference behavior. Every parameter this node
+        # reads into a cached attribute above must be handled here too.
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self._load_model(
             str(gp('model_path').value),
@@ -158,6 +208,56 @@ class VisionNode(Node):
         except (OSError, ValueError, cv2.error) as exc:
             self._model_error = str(exc)
             self.get_logger().error(self._model_error)
+
+    def _on_set_parameters(self, params):
+        """Validate a batch of live parameter changes, then apply them.
+
+        rclpy calls this before a set_parameters request is accepted, with
+        every parameter in the request in one batch. Validate the whole
+        batch first and reject it atomically on the first bad value -
+        applying half a batch would leave e.g. confidence_threshold updated
+        but nms_threshold rejected, which is a confusing partial state for
+        whoever is watching the settings panel.
+        """
+        for param in params:
+            try:
+                if param.name in ('max_fps',):
+                    if float(param.value) < 0:
+                        raise ValueError('must be >= 0')
+                elif param.name in ('confidence_threshold', 'nms_threshold'):
+                    if not (0.0 <= float(param.value) <= 1.0):
+                        raise ValueError('must be in [0.0, 1.0]')
+                elif param.name in (
+                    'snapshot_max_size', 'snapshot_full_frame_max_width',
+                ):
+                    if int(param.value) <= 0:
+                        raise ValueError('must be positive')
+                elif param.name in (
+                    'snapshot_jpeg_quality', 'snapshot_full_frame_jpeg_quality',
+                ):
+                    if not (1 <= int(param.value) <= 100):
+                        raise ValueError('must be in [1, 100]')
+            except (TypeError, ValueError) as exc:
+                return SetParametersResult(
+                    successful=False, reason=f'{param.name}: {exc}')
+
+        for param in params:
+            if param.name == 'max_fps':
+                max_fps = float(param.value)
+                self._minimum_period = 1.0 / max_fps if max_fps > 0 else 0.0
+            elif param.name == 'confidence_threshold':
+                self._confidence = float(param.value)
+            elif param.name == 'nms_threshold':
+                self._nms = float(param.value)
+            elif param.name == 'snapshot_max_size':
+                self._snapshot_max_size = int(param.value)
+            elif param.name == 'snapshot_jpeg_quality':
+                self._snapshot_jpeg_quality = int(param.value)
+            elif param.name == 'snapshot_full_frame_max_width':
+                self._snapshot_full_frame_max_width = int(param.value)
+            elif param.name == 'snapshot_full_frame_jpeg_quality':
+                self._snapshot_full_frame_jpeg_quality = int(param.value)
+        return SetParametersResult(successful=True)
 
     def _on_image(self, message):
         now = time.monotonic()
@@ -256,6 +356,23 @@ class VisionNode(Node):
             'frame_id': header.frame_id,
             'snapshots': snapshots,
         }
+
+        # Full frame with every box drawn on it, so a human can tell where
+        # in the shot each crop above came from. Best-effort: a failure
+        # here must never cost the per-detection snapshots above, which are
+        # what scout2map_event actually correlates by detection_id.
+        if self._snapshot_full_frame_enabled:
+            try:
+                frame_jpeg_b64 = encode_frame_jpeg(
+                    draw_detections(image, detections),
+                    max_width=self._snapshot_full_frame_max_width,
+                    jpeg_quality=self._snapshot_full_frame_jpeg_quality,
+                )
+                if frame_jpeg_b64 is not None:
+                    payload['frame_jpeg_b64'] = frame_jpeg_b64
+            except (cv2.error, ValueError) as exc:
+                self.get_logger().warning(f'full-frame snapshot failed: {exc}')
+
         self._snapshot_pub.publish(String(data=json.dumps(payload)))
 
     def _publish_diagnostics(self):

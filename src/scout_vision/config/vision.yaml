@@ -31,6 +31,12 @@ scout_vision:
     max_fps: 5.0
     frame_timeout_s: 2.0
 
+    # 0 = leave OpenCV's own thread-count heuristic alone. Set to the Pi's
+    # core count (e.g. 4) to make cv2.dnn's forward() use every core
+    # explicitly - one of the few free things to try against the ~1s/frame
+    # inference latency without swapping to the smaller 320 model.
+    dnn_num_threads: 0
+
     # Small crop of each detection's box (JPEG+base64 over /vision/snapshots)
     # so scout2map_event can attach a thumbnail to the event and a human can
     # visually confirm a hazard from the web dashboard.
@@ -39,3 +45,12 @@ scout_vision:
     snapshot_max_size: 128
     snapshot_jpeg_quality: 60
     snapshot_margin_ratio: 0.15
+
+    # Full camera frame with every detection box drawn on it, sent
+    # alongside the per-detection crops above (as 'frame_jpeg_b64') so an
+    # operator can see WHERE in the shot a hazard is, not just a tight crop
+    # of it. comm_relay can lower max_width/jpeg_quality live when the link
+    # to the web client gets weak - see S2M-CommRelay's LINK_QUALITY_PROFILES.
+    snapshot_full_frame_enabled: true
+    snapshot_full_frame_max_width: 480
+    snapshot_full_frame_jpeg_quality: 55
