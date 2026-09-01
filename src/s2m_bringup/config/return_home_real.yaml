@@ -9,7 +9,7 @@ return_home:
     cmd_vel_topic: /return_home/stop_cmd
     motion_inhibit_topic: /return_home/motion_inhibit
     navigate_action: /navigate_to_pose
-    heartbeat_timeout_sec: 3.0
+    heartbeat_timeout_sec: 30.0
     drive_link_timeout_sec: 1.0
     tf_max_age_sec: 1.0
     # Real-hardware config used to leave these off, which meant the state
