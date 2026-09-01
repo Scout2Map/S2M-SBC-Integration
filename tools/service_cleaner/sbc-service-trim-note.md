@@ -134,19 +134,3 @@ GUI를 요구한 적이 없다(`PACKAGE_INVENTORY.md` 확인). 그런데 실물 
 free -h
 systemctl list-units --state=running | wc -l
 ```
-
-## 다음에 할 일
-
-- 오빠가 실기에서 dry-run 결과 확인 → 실제로 뭐가 켜져 있는지 (SBC마다
-  이미지에 따라 SAFE 티어 항목 자체가 아예 안 깔려있을 수도 있음, 스크립트는
-  설치 안 된 유닛은 자동으로 건너뜀)
-- 문제 없으면 `scripts/raspberry_pi/systemd/trim-unused-services.sh`로
-  저장소에 커밋하고, `README.md`에 opt-in 항목으로 링크 추가 (bringup
-  systemd 유닛처럼 "선택 사항, install.sh가 자동으로 안 건드림" 패턴 유지)
-- `--apply` 실행 후 다른 머신에서 `ssh <계정>@s2m.local` 접속이 실제로
-  되는지 확인 (같은 로컬 네트워크에서만 동작하는 mDNS라 라우터를 넘어가는
-  네트워크 구성이면 안 될 수 있음)
-- 기존에 다른 이름/IP로 저장해둔 SSH config, 스크립트, 북마크가 있으면
-  `s2m.local`로 갱신
-- `--with-gui` dry-run으로 실기에 디스플레이 매니저가 실제로 깔려 있는지부터
-  확인 — 없으면(원래 Ubuntu Server 이미지였으면) 이 티어는 아무 효과가 없다
