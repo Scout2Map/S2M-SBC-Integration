@@ -1,0 +1,5 @@
+# Build and dependency tooling, installed once the ROS repository exists
+ros-dev-tools
+python3-rosdep
+python3-colcon-common-extensions
+python3-vcstool

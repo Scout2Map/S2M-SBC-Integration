@@ -1,0 +1,56 @@
+v4l2_camera:
+  ros__parameters:
+    video_device: "/dev/video0"
+    # MJPG instead of raw YUYV - the camera compresses on-device, so the
+    # actual USB isochronous bandwidth demand drops sharply at the same
+    # resolution/fps. Root cause of the 2026-08-29 "waiting for camera
+    # frames forever" incident was this camera failing to negotiate USB
+    # bandwidth for raw YUYV (uvcvideo "Failed to resubmit video URB",
+    # fixed with quirks=0x280 - keep that quirks module option regardless
+    # of pixel_format, it is not redundant with this). v4l2_camera decodes
+    # MJPG to output_encoding itself, so scout_vision needs no changes -
+    # it always receives rgb8 either way.
+    pixel_format: "MJPG"
+    output_encoding: "rgb8"
+    image_size: [640, 480]
+    use_v4l2_buffer_timestamps: true
+    camera_frame_id: "camera_optical_frame"
+
+scout_vision:
+  ros__parameters:
+    image_topic: "/camera/image_raw"
+    detections_topic: "/vision/detections"
+    diagnostics_topic: "/diagnostics"
+    vision_info_topic: "/vision/info"
+    model_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_640_v9.onnx"
+    labels_path: "~/scout2map_ws/src/scout_vision/models/s2m_vAI_lite_labels_v9.txt"
+    input_width: 640
+    input_height: 640
+    confidence_threshold: 0.35
+    nms_threshold: 0.60
+    max_fps: 5.0
+    frame_timeout_s: 2.0
+
+    # 0 = leave OpenCV's own thread-count heuristic alone. Set to the Pi's
+    # core count (e.g. 4) to make cv2.dnn's forward() use every core
+    # explicitly - one of the few free things to try against the ~1s/frame
+    # inference latency without swapping to the smaller 320 model.
+    dnn_num_threads: 0
+
+    # Small crop of each detection's box (JPEG+base64 over /vision/snapshots)
+    # so scout2map_event can attach a thumbnail to the event and a human can
+    # visually confirm a hazard from the web dashboard.
+    snapshot_enabled: true
+    snapshot_topic: "/vision/snapshots"
+    snapshot_max_size: 128
+    snapshot_jpeg_quality: 60
+    snapshot_margin_ratio: 0.15
+
+    # Full camera frame with every detection box drawn on it, sent
+    # alongside the per-detection crops above (as 'frame_jpeg_b64') so an
+    # operator can see WHERE in the shot a hazard is, not just a tight crop
+    # of it. comm_relay can lower max_width/jpeg_quality live when the link
+    # to the web client gets weak - see S2M-CommRelay's LINK_QUALITY_PROFILES.
+    snapshot_full_frame_enabled: true
+    snapshot_full_frame_max_width: 480
+    snapshot_full_frame_jpeg_quality: 55

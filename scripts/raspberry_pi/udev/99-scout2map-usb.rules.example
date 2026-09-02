@@ -1,0 +1,21 @@
+# Stable device names for the two Scout2Map MCUs.
+# Both boards enumerate as /dev/ttyACM* and the numbering follows plug order,
+# so without these rules the roles swap depending on boot timing.
+#
+# VID/PID below match scout2map_bridge/udev/99-scout2map.rules in
+# S2M-MCU-BridgeNode, which is the source of truth. Confirm with `lsusb`
+# before installing.
+#
+# ATTRS{serial} is optional here. Add it only when two boards of the SAME
+# model are attached, and check the value first:
+#   udevadm info -a -n /dev/ttyACM0 | grep -m1 '{serial}'
+#
+# Install:
+#   sudo cp 99-scout2map-usb.rules.example /etc/udev/rules.d/99-scout2map-usb.rules
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Sensor fusion MCU, Raspberry Pi Pico 2 (pico-sdk CDC default)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="000a", SYMLINK+="scout2map_pico", GROUP="dialout", MODE="0660"
+
+# Drive control MCU, STM32F103C8T6 (ST virtual COM port pair, set in usb_cdc.c)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="scout2map_drive", GROUP="dialout", MODE="0660"

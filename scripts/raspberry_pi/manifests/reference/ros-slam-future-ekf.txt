@@ -1,0 +1,23 @@
+# NOT READ BY install.sh -- reference only, not an active manifest.
+#
+# OBSOLETE as of the 2026-08-24 real-hardware EKF introduction: ros-onboard.txt
+# now installs ros-jazzy-robot-localization directly, so that line no longer
+# needs to be folded in from here. This file is kept only in case
+# imu-tools / diagnostic-updater / laser-filters are ever actually wired into
+# a launch file -- none of the three are used by any node in this repo today,
+# so they were not added to ros-onboard.txt alongside robot-localization.
+ros-jazzy-ros-base
+ros-jazzy-navigation2
+ros-jazzy-nav2-bringup
+ros-jazzy-slam-toolbox
+ros-jazzy-robot-localization
+ros-jazzy-imu-tools
+ros-jazzy-diagnostic-updater
+ros-jazzy-tf2-tools
+ros-jazzy-robot-state-publisher
+ros-jazzy-joint-state-publisher
+ros-jazzy-xacro
+ros-jazzy-laser-filters
+ros-jazzy-rosbag2
+ros-jazzy-rosbag2-storage-mcap
+ros-jazzy-teleop-twist-keyboard

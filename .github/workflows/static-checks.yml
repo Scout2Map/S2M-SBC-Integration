@@ -1,0 +1,21 @@
+name: Static checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML
+      - run: python tools/static_check.py
+      - name: Check shell syntax
+        run: |
+          for script in scripts/raspberry_pi/*.sh; do
+            bash -n "$script"
+          done

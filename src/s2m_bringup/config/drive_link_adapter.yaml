@@ -1,0 +1,27 @@
+drive_link_adapter:
+  ros__parameters:
+    # Real hardware runs on wall time; there is no /clock publisher on board
+    use_sim_time: false
+
+    drive_status_topic: /drive/status
+    link_topic: /drive/link_ok
+    # Consumed by return_home as its own auto-return trigger, independent
+    # of link_topic/batt_critical_blocks_link below (see return_home_policy.py)
+    battery_critical_topic: /drive/battery_critical
+
+    # return_home uses drive_link_timeout_sec 1.0, so publish faster than that
+    publish_rate_hz: 10.0
+
+    # The drive bridge publishes DriveStatus at status_rate_hz (10Hz default).
+    # 0.5s allows several missed messages before declaring the link down.
+    status_timeout_sec: 0.5
+
+    # Conditions that block an autonomous return even when the serial link
+    # itself is alive. Set to false only for isolated bench tests.
+    estop_blocks_link: true
+    fault_blocks_link: true
+    cmd_timeout_blocks_link: true
+    batt_dead_blocks_link: true
+
+    # A critical but not dead pack should still be allowed to drive home
+    batt_critical_blocks_link: false

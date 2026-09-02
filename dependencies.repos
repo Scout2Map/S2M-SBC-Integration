@@ -1,0 +1,30 @@
+repositories:
+  s2m_hardware:
+    type: git
+    url: https://github.com/Scout2Map/S2M-Hardware.git
+    version: 53fcc7a7b9f0d6cbfd7631247572be78bafd6006
+  s2m_mcu_bridge_node:
+    type: git
+    url: https://github.com/Scout2Map/S2M-MCU-BridgeNode.git
+    version: 455c44103c21c9e44b5bbc91666f96eb40125e65
+  s2m_event_engine:
+    type: git
+    url: https://github.com/Scout2Map/S2M-Event-Engine.git
+    version: c29782b900a170cf43e2638e9d068b5c776d2a2c
+  sllidar_ros2:
+    type: git
+    url: https://github.com/Slamtec/sllidar_ros2.git
+    version: 34300099fadfc772965962dec837bf436706188f
+  # m-explore-ros2 (explore_lite port). Picked over frontier_exploration_ros2
+  # for this project: it is the long-established, widely deployed frontier
+  # algorithm with a minimal dependency footprint (no rosidl message
+  # generation, no MRTSP/decision-map machinery), which matters on an RPi5
+  # already running SLAM + Nav2 + the event engine. Both candidates pass
+  # CI on ROS 2 Jazzy; frontier_exploration_ros2's extra features target
+  # multi-robot ordering and large-scale coverage that this single-UGV
+  # recon platform does not need. The repo also ships multirobot_map_merge
+  # (unused here, harmless extra build) and explore_lite_msgs.
+  m_explore_ros2:
+    type: git
+    url: https://github.com/robo-friends/m-explore-ros2.git
+    version: 326cf8a0b487c34246bb8f3326afbcd69576dc60

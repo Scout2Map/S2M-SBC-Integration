@@ -1,0 +1,39 @@
+return_home:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    base_frame: base_link
+    heartbeat_topic: /control/heartbeat
+    drive_link_topic: /drive/link_ok
+    battery_critical_topic: /drive/battery_critical
+    cmd_vel_topic: /return_home/stop_cmd
+    motion_inhibit_topic: /return_home/motion_inhibit
+    navigate_action: /navigate_to_pose
+    heartbeat_timeout_sec: 30.0
+    drive_link_timeout_sec: 1.0
+    tf_max_age_sec: 1.0
+    auto_capture_start: true
+    auto_capture_delay_sec: 8.0
+    auto_arm: true
+    return_timeout_sec: 120.0
+    progress_timeout_sec: 30.0
+    progress_min_delta_m: 0.05
+    control_rate_hz: 10.0
+
+sim_fault_injector:
+  ros__parameters:
+    use_sim_time: true
+    heartbeat_topic: /control/heartbeat
+    drive_link_topic: /drive/link_ok
+    battery_critical_topic: /drive/battery_critical
+    publish_rate_hz: 5.0
+
+cmd_vel_safety_gate:
+  ros__parameters:
+    use_sim_time: true
+    input_topic: /return_home/cmd_vel_input
+    output_topic: /cmd_vel
+    inhibit_topic: /return_home/motion_inhibit
+    input_timeout_sec: 0.5
+    inhibit_timeout_sec: 2.5
+    publish_rate_hz: 20.0

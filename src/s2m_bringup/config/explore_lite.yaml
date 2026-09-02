@@ -1,0 +1,35 @@
+# explore_lite (m-explore-ros2) params for the real UGV.
+# Package defaults: https://github.com/robo-friends/m-explore-ros2/blob/main/explore/config/params.yaml
+# Only the fields that must change for this project are overridden below;
+# everything else keeps explore_lite's upstream default.
+/**:
+  ros__parameters:
+    robot_base_frame: base_link
+
+    # Upstream default is "map"/"map_updates", which is the SLAM occupancy
+    # grid, not a Nav2 costmap. Point explore_lite at Nav2's global costmap
+    # instead so frontier scoring accounts for inflation/obstacles the same
+    # way the planner does. Topic names match nav2_costmap_2d's defaults,
+    # which nav2_lowspec.yaml's global_costmap does not override.
+    costmap_topic: "global_costmap/costmap"
+    costmap_updates_topic: "global_costmap/costmap_updates"
+
+    # return_home_node already owns "go back to the start pose" behavior
+    # (see return_home_real.yaml). Leaving explore_lite's own return-to-init
+    # on would give two nodes independent authority to send NavigateToPose
+    # goals at the end of a run, which can race. Keep exploration's job
+    # scoped to picking frontiers only.
+    return_to_init: false
+
+    visualize: true
+    planner_frequency: 0.3
+    progress_timeout: 30.0
+    # Frontier score is roughly potential_scale * distance - gain_scale * size,
+    # lowest wins. At 3.0 / 1.0 distance dominated and the robot kept picking
+    # the nearest scrap of frontier instead of committing to a large unexplored
+    # area, which showed up as zig-zagging. Weighted towards size instead.
+    potential_scale: 5.0
+    orientation_scale: 0.5
+    gain_scale: 0.5
+    transform_tolerance: 1.0
+    min_frontier_size: 0.15

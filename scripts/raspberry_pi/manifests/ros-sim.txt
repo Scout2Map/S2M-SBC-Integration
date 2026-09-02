@@ -1,0 +1,5 @@
+# Laptop only: Gazebo Harmonic and RViz. Never installed on the robot.
+ros-jazzy-desktop
+ros-jazzy-rviz2
+ros-jazzy-ros-gz-sim
+ros-jazzy-ros-gz-bridge
