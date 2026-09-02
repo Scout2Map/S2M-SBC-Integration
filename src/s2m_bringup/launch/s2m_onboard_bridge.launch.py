@@ -34,6 +34,7 @@ def generate_launch_description():
 
     sensor_params = os.path.join(bridge_share, 'config', 'sensor_bridge.yaml')
     drive_params = os.path.join(bridge_share, 'config', 'drive_bridge.yaml')
+    gpio_params = os.path.join(bridge_share, 'config', 'gpio_events.yaml')
     adapter_params = os.path.join(
         bringup_share, 'config', 'drive_link_adapter.yaml')
     ekf_params = os.path.join(bringup_share, 'config', 'ekf.yaml')
@@ -56,9 +57,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sensor_bridge', default_value='true'),
         DeclareLaunchArgument('use_drive_bridge', default_value='true'),
         DeclareLaunchArgument('use_drive_link_adapter', default_value='true'),
+        DeclareLaunchArgument('use_gpio_events', default_value='true'),
 
         DeclareLaunchArgument('sensor_params_file', default_value=sensor_params),
         DeclareLaunchArgument('drive_params_file', default_value=drive_params),
+        DeclareLaunchArgument('gpio_params_file', default_value=gpio_params),
         DeclareLaunchArgument(
             'drive_link_adapter_params_file', default_value=adapter_params),
 
@@ -124,6 +127,16 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('use_drive_bridge')),
     )
 
+    gpio_events = Node(
+        package='scout2map_bridge',
+        executable='gpio_events',
+        name='gpio_events',
+        output='screen',
+        emulate_tty=True,
+        parameters=[LaunchConfiguration('gpio_params_file')],
+        condition=IfCondition(LaunchConfiguration('use_gpio_events')),
+    )
+
     drive_link_adapter = Node(
         package='s2m_bringup',
         executable='drive_link_adapter',
@@ -182,6 +195,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         sensor_bridge,
         drive_bridge,
+        gpio_events,
         drive_link_adapter,
         ekf,
         sensor_fusion_tf,
