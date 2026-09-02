@@ -43,7 +43,7 @@ slam_toolbox:
     correlation_search_space_angular_resolution: 0.005
     
     link_scan_maximum_distance: 2.0
-    scan_buffer_size: 15
+    scan_buffer_size: 25
     minimum_travel_distance: 0.10
     minimum_travel_heading: 0.10
     use_scan_matching: true
